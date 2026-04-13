@@ -1,1 +1,4 @@
 node_modules
+*.apk
+*.aab
+_tmp_*

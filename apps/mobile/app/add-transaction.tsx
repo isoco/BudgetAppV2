@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Switch } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { getCategories, createTransaction, updateCategory } from '../src/db/queries';
@@ -11,6 +11,7 @@ type TxType = 'expense' | 'income' | 'transfer';
 
 export default function AddTransactionScreen() {
   const { colors, spacing, radius, typography } = useTheme();
+  const { defaultDate } = useLocalSearchParams<{ defaultDate?: string }>();
   const { data: categories = [] } = useQuery(getCategories);
   const [type, setType]         = useState<TxType>('expense');
   const [amount, setAmount]     = useState('');
@@ -35,7 +36,7 @@ export default function AddTransactionScreen() {
     setSaving(true);
     try {
       await createTransaction({
-        amount: num, type, date: format(new Date(), 'yyyy-MM-dd'),
+        amount: num, type, date: defaultDate ?? format(new Date(), 'yyyy-MM-dd'),
         category_id: catId, note: note || null, merchant: merchant || null,
       });
       // If recurring, update the category

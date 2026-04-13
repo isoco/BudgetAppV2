@@ -740,15 +740,16 @@ export async function getMonthDetail(month: number, year: number): Promise<{
   };
 }
 
-export async function getMonthHistory(months = 12): Promise<{
+export async function getMonthHistory(pastMonths = 3, futureMonths = 12): Promise<{
   label: string; income: number; expense: number; savings: number;
-  opening: number; closing: number;
+  opening: number; closing: number; month: number; year: number;
 }[]> {
   const db  = await getDb();
   const now = new Date();
   const result = [];
 
-  for (let i = months - 1; i >= 0; i--) {
+  // i > 0 → past, i = 0 → current, i < 0 → future
+  for (let i = pastMonths; i >= -futureMonths; i--) {
     const d   = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const m   = d.getMonth() + 1;
     const y   = d.getFullYear();
@@ -771,12 +772,52 @@ export async function getMonthHistory(months = 12): Promise<{
 
     result.push({
       label:   d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-      income, expense, savings,
-      opening,
+      income, expense, savings, opening, month: m, year: y,
       closing: opening + income - savings - expense,
     });
   }
   return result;
+}
+
+export async function getDashboardDataForMonth(month: number, year: number): Promise<{
+  income: number; expense: number; opening: number; savings: number; balance: number;
+  transactions: Transaction[];
+  recurring: { name: string; icon: string; color: string; amount: number; type: string; due_day: number | null }[];
+}> {
+  const db  = await getDb();
+  const key = `${year}-${String(month).padStart(2, '0')}`;
+
+  const [totals, mb, txs, cats] = await Promise.all([
+    db.getAllAsync<any>(`
+      SELECT
+        COALESCE(SUM(CASE WHEN type='income'  THEN amount ELSE 0 END),0) AS income,
+        COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense
+      FROM transactions WHERE strftime('%Y-%m', date) = ?`, [key]
+    ),
+    db.getAllAsync<MonthBalance>('SELECT * FROM month_balances WHERE month=? AND year=?', [month, year]),
+    db.getAllAsync<Transaction>(
+      `${TX_SELECT} WHERE strftime('%Y-%m', t.date) = ? ORDER BY t.date DESC, t.created_at DESC`,
+      [key]
+    ),
+    db.getAllAsync<Category>(
+      `SELECT * FROM categories WHERE is_recurring = 1 AND is_active = 1 AND default_amount > 0`
+    ),
+  ]);
+
+  const opening = mb[0]?.opening_balance      ?? 0;
+  const savings = mb[0]?.savings_contribution ?? 0;
+  const income  = totals[0]?.income  ?? 0;
+  const expense = totals[0]?.expense ?? 0;
+
+  return {
+    income, expense, opening, savings,
+    balance: opening + income - savings - expense,
+    transactions: txs,
+    recurring: cats.map(c => ({
+      name: c.name, icon: c.icon, color: c.color,
+      amount: c.default_amount, type: c.type === 'both' ? 'expense' : c.type, due_day: c.due_day,
+    })),
+  };
 }
 
 // ─── Export / Import ──────────────────────────────────────────────────────────
