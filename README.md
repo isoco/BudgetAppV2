@@ -233,7 +233,7 @@ sdkmanager \
 
 ```bash
 rsync -av --exclude='node_modules' --exclude='.git' \
-  /mnt/d/Projekti/BudgetAppV2/ ~/BudgetAppV2/
+  /mnt/c/Projekti/BudgetAppV2/ ~/BudgetAppV2/
 cd ~/BudgetAppV2
 pnpm install
 ```

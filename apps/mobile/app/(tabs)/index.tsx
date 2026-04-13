@@ -13,6 +13,7 @@ import {
   autoPopulateRecurring, UpcomingItem,
   getDailySpends, createDailySpend, deleteDailySpend, DailySpend,
   getTodayTransactions, getMonthTransactionDetails, Transaction,
+  transferLastMonthBalance,
 } from '../../src/db/queries';
 import { useQuery } from '../../src/hooks/useQuery';
 import { useTheme } from '../../src/theme/useTheme';
@@ -66,6 +67,7 @@ export default function DashboardScreen() {
     getSettings().then(s => {
       if (s.auto_rollover) rolloverFromPreviousMonth().then(refetch);
     });
+    transferLastMonthBalance().then(refetch);
     loadDaySpends(todayStr());
   }, []);
 

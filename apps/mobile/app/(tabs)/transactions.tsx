@@ -10,6 +10,18 @@ import { colors as staticColors, spacing, radius, typography } from '../../src/t
 import { TransactionItem } from '../../src/components/TransactionItem';
 
 type Filter = 'all' | 'income' | 'expense';
+type DailyExpense = { date: string; total: number };
+type ListItem = { type: 'tx'; tx: Transaction } | { type: 'daily'; date: string; total: number };
+
+function groupExpensesByDay(txs: Transaction[]): DailyExpense[] {
+  const map: Record<string, number> = {};
+  for (const tx of txs) {
+    map[tx.date] = (map[tx.date] ?? 0) + tx.amount;
+  }
+  return Object.entries(map)
+    .map(([date, total]) => ({ date, total }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
 
 export default function TransactionsScreen() {
   const { colors } = useTheme();
@@ -24,7 +36,7 @@ export default function TransactionsScreen() {
       from:  format(startOfMonth(now), 'yyyy-MM-dd'),
       to:    format(endOfMonth(now),   'yyyy-MM-dd'),
       type:  filter === 'all' ? undefined : filter,
-      limit: 100,
+      limit: 200,
     });
     setTransactions(data);
     setLoading(false);
@@ -41,6 +53,10 @@ export default function TransactionsScreen() {
       }},
     ]);
   }
+
+  const listData: ListItem[] = filter === 'expense'
+    ? groupExpensesByDay(transactions).map(d => ({ type: 'daily', date: d.date, total: d.total }))
+    : transactions.map(tx => ({ type: 'tx', tx }));
 
   return (
     <View style={[s.container, { backgroundColor: colors.bg }]}>
@@ -63,29 +79,46 @@ export default function TransactionsScreen() {
       </View>
 
       <FlatList
-        data={transactions}
-        keyExtractor={t => t.id}
+        data={listData}
+        keyExtractor={(item, i) => item.type === 'daily' ? `daily-${item.date}` : item.tx.id}
         refreshing={loading}
         onRefresh={load}
-        renderItem={({ item }) => (
-          <View>
-            <TransactionItem
-              transaction={item}
-              onDelete={() => handleDelete(item.id)}
-              onLongPress={async () => {
-                const newPaidDate = item.paid_date ? null : new Date().toISOString().split('T')[0];
-                await markTransactionPaid(item.id, newPaidDate);
-                load();
-              }}
-            />
-            {item.paid_date && (
-              <View style={s.paidBadge}>
-                <Ionicons name="checkmark-circle" size={12} color={staticColors.success} />
-                <Text style={s.paidText}>Paid</Text>
+        renderItem={({ item }) => {
+          if (item.type === 'daily') {
+            return (
+              <View style={[s.dailyRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View>
+                  <Text style={[s.dailyLabel, { color: colors.text }]}>Life Expenses</Text>
+                  <Text style={[s.dailyDate, { color: colors.textMuted }]}>
+                    {format(new Date(item.date), 'MMM d, yyyy')}
+                  </Text>
+                </View>
+                <Text style={[s.dailyAmount, { color: staticColors.dark.text }]}>
+                  -€{item.total.toFixed(2)}
+                </Text>
               </View>
-            )}
-          </View>
-        )}
+            );
+          }
+          return (
+            <View>
+              <TransactionItem
+                transaction={item.tx}
+                onDelete={() => handleDelete(item.tx.id)}
+                onLongPress={async () => {
+                  const newPaidDate = item.tx.paid_date ? null : new Date().toISOString().split('T')[0];
+                  await markTransactionPaid(item.tx.id, newPaidDate);
+                  load();
+                }}
+              />
+              {item.tx.paid_date && (
+                <View style={s.paidBadge}>
+                  <Ionicons name="checkmark-circle" size={12} color={staticColors.success} />
+                  <Text style={s.paidText}>Paid</Text>
+                </View>
+              )}
+            </View>
+          );
+        }}
         contentContainerStyle={s.list}
         ListEmptyComponent={!loading ? <Text style={[s.empty, { color: colors.textMuted }]}>No transactions this month</Text> : null}
       />
@@ -111,4 +144,8 @@ const s = StyleSheet.create({
   empty:          { ...typography.base, textAlign: 'center', marginTop: spacing.xl },
   paidBadge:      { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.md, paddingBottom: 4, marginTop: -8 },
   paidText:       { ...typography.xs, color: staticColors.success, fontWeight: '600' },
+  dailyRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderRadius: radius.md, borderWidth: 1, marginBottom: spacing.sm },
+  dailyLabel:     { ...typography.base, fontWeight: '600' },
+  dailyDate:      { ...typography.xs, marginTop: 2 },
+  dailyAmount:    { ...typography.base, fontWeight: '700' },
 });

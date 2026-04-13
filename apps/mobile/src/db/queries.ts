@@ -428,6 +428,57 @@ export async function getYearOverview(year: number): Promise<{
   return result;
 }
 
+// ─── Savings History ─────────────────────────────────────────────────────────
+
+export interface SavingsMonth {
+  month: number; year: number; label: string;
+  savings: number; cumulative: number;
+}
+
+export async function getSavingsHistory(): Promise<{ months: SavingsMonth[]; total: number }> {
+  const db  = await getDb();
+  const now = new Date();
+  // Go back up to 24 months, stop at first month with no data
+  const rows = await db.getAllAsync<{ month: number; year: number; savings_contribution: number }>(
+    `SELECT month, year, savings_contribution FROM month_balances
+     WHERE savings_contribution > 0
+     ORDER BY year ASC, month ASC`
+  );
+
+  // Also include current month from settings default if no record yet
+  const settingsRows = await db.getAllAsync<any>('SELECT key, value FROM settings');
+  const cfg: Record<string, number> = {};
+  for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
+
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let cumulative = 0;
+  const months: SavingsMonth[] = rows.map(r => {
+    cumulative += r.savings_contribution;
+    return {
+      month: r.month, year: r.year,
+      label: `${monthNames[r.month - 1]} ${r.year}`,
+      savings: r.savings_contribution,
+      cumulative,
+    };
+  });
+
+  // Add current month if not already in list and has default savings set
+  const curM = now.getMonth() + 1;
+  const curY = now.getFullYear();
+  const hasCurrent = rows.some(r => r.month === curM && r.year === curY);
+  if (!hasCurrent && cfg.monthly_savings > 0) {
+    cumulative += cfg.monthly_savings;
+    months.push({
+      month: curM, year: curY,
+      label: `${monthNames[curM - 1]} ${curY}`,
+      savings: cfg.monthly_savings,
+      cumulative,
+    });
+  }
+
+  return { months: months.reverse(), total: cumulative };
+}
+
 // ─── End-of-Month Projection ──────────────────────────────────────────────────
 
 export async function getEndOfMonthProjection(): Promise<{
@@ -714,6 +765,55 @@ export async function rolloverFromPreviousMonth(): Promise<{ amount: number; fro
     amount: rollover,
     fromMonth: prev.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
   };
+}
+
+export async function transferLastMonthBalance(): Promise<{ amount: number; created: boolean }> {
+  const db  = await getDb();
+  const now = new Date();
+  const m   = now.getMonth() + 1;
+  const y   = now.getFullYear();
+  const firstOfMonth = `${y}-${String(m).padStart(2,'0')}-01`;
+
+  // Idempotent: skip if already created
+  const existing = await db.getAllAsync<{ id: string }>(
+    `SELECT id FROM transactions WHERE type='income' AND note='Last Month Balance' AND strftime('%Y-%m', date) = ?`,
+    [`${y}-${String(m).padStart(2,'0')}`]
+  );
+  if (existing.length > 0) return { amount: 0, created: false };
+
+  const prev         = new Date(y, m - 2, 1);
+  const prevM        = prev.getMonth() + 1;
+  const prevY        = prev.getFullYear();
+  const prevMonthStr = `${prevY}-${String(prevM).padStart(2,'0')}`;
+
+  const [prevTotals, prevMb, settingsRows] = await Promise.all([
+    db.getAllAsync<any>(
+      `SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) AS income,
+              COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense
+       FROM transactions WHERE strftime('%Y-%m', date) = ?`,
+      [prevMonthStr]
+    ),
+    db.getAllAsync<MonthBalance>('SELECT * FROM month_balances WHERE month=? AND year=?', [prevM, prevY]),
+    db.getAllAsync<any>('SELECT key, value FROM settings'),
+  ]);
+
+  const cfg: Record<string, number> = {};
+  for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
+
+  const prevOpening = prevMb[0]?.opening_balance      ?? 0;
+  const prevSavings = prevMb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
+  const prevIncome  = prevTotals[0]?.income  ?? 0;
+  const prevExpense = prevTotals[0]?.expense ?? 0;
+  const balance     = prevOpening + prevIncome - prevSavings - prevExpense;
+  const amount      = Math.max(0, balance);
+
+  if (amount <= 0) return { amount: 0, created: false };
+
+  await db.runAsync(
+    'INSERT INTO transactions (id, amount, type, date, note) VALUES (?,?,?,?,?)',
+    [uuid(), amount, 'income', firstOfMonth, 'Last Month Balance']
+  );
+  return { amount, created: true };
 }
 
 export async function getMonthDetail(month: number, year: number): Promise<{
