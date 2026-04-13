@@ -282,12 +282,12 @@ async function _getUpcoming(type: 'income' | 'expense'): Promise<UpcomingItem[]>
 
     if (daysUntilDue > lookahead) continue;
 
-    const dueDate = `${y}-€{String(m).padStart(2,'0')}-€{String(effectiveDueDay).padStart(2,'0')}`;
+    const dueDate = `${y}-${String(m).padStart(2,'0')}-${String(effectiveDueDay).padStart(2,'0')}`;
 
     // Check if already has a transaction this month
     const existing = await db.getAllAsync<{count:number}>(
       `SELECT COUNT(*) as count FROM transactions WHERE category_id = ? AND strftime('%Y-%m', date) = ? AND type = ?`,
-      [cat.id, `${y}-€{String(m).padStart(2,'0')}`, type]
+      [cat.id, `${y}-${String(m).padStart(2,'0')}`, type]
     );
     if (existing[0].count > 0) continue;
 
@@ -393,7 +393,7 @@ export async function getYearOverview(year: number): Promise<{
   const result = [];
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   for (let m = 1; m <= 12; m++) {
-    const key = `${year}-€{String(m).padStart(2,'0')}`;
+    const key = `${year}-${String(m).padStart(2,'0')}`;
     const [totals, mb] = await Promise.all([
       db.getAllAsync<any>(`
         SELECT
@@ -428,7 +428,7 @@ export async function getEndOfMonthProjection(): Promise<{
   const y   = now.getFullYear();
   const daysInMonth = new Date(y, m, 0).getDate();
   const days_left   = Math.max(0, daysInMonth - now.getDate());
-  const thisMonth   = `${y}-€{String(m).padStart(2,'0')}`;
+  const thisMonth   = `${y}-${String(m).padStart(2,'0')}`;
 
   const [actuals, budgets, mb, settingsRows] = await Promise.all([
     db.getAllAsync<any>(`
@@ -461,7 +461,7 @@ export async function autoPopulateRecurring(year: number, month: number): Promis
   const cats = await db.getAllAsync<Category>(
     `SELECT * FROM categories WHERE is_recurring = 1 AND is_active = 1 AND default_amount > 0`
   );
-  const monthStr = `${year}-€{String(month).padStart(2,'0')}`;
+  const monthStr = `${year}-${String(month).padStart(2,'0')}`;
   for (const cat of cats) {
     const existing = await db.getAllAsync<{count:number}>(
       `SELECT COUNT(*) as count FROM transactions WHERE category_id=? AND strftime('%Y-%m',date)=?`,
@@ -470,7 +470,7 @@ export async function autoPopulateRecurring(year: number, month: number): Promis
     if (existing[0].count > 0) continue;
     const daysInMonth = new Date(year, month, 0).getDate();
     const day = cat.due_day ? Math.min(cat.due_day, daysInMonth) : 1;
-    const date = `${year}-€{String(month).padStart(2,'0')}-€{String(day).padStart(2,'0')}`;
+    const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const txType = cat.type === 'income' ? 'income' : 'expense';
     await db.runAsync(
       'INSERT INTO transactions (id, amount, type, date, category_id, is_recurring) VALUES (?,?,?,?,?,1)',
@@ -486,9 +486,9 @@ export async function getDashboardData() {
   const now = new Date();
   const m   = now.getMonth() + 1;
   const y   = now.getFullYear();
-  const thisMonth    = `${y}-€{String(m).padStart(2, '0')}`;
+  const thisMonth    = `${y}-${String(m).padStart(2, '0')}`;
   const lastMonthDt  = new Date(y, m - 2, 1);
-  const lastMonthStr = `${lastMonthDt.getFullYear()}-€{String(lastMonthDt.getMonth() + 1).padStart(2, '0')}`;
+  const lastMonthStr = `${lastMonthDt.getFullYear()}-${String(lastMonthDt.getMonth() + 1).padStart(2, '0')}`;
 
   const [totals, cats, recent, mbRows, settings] = await Promise.all([
     db.getAllAsync<any>(`
@@ -570,12 +570,12 @@ export async function getSmartTips(): Promise<string[]> {
       JOIN categories c ON c.id=t.category_id
       WHERE t.type='expense' AND strftime('%Y-%m',t.date)=?
       GROUP BY c.name ORDER BY total DESC LIMIT 1`,
-      [`${yyyy}-€{m}`]
+      [`${yyyy}-${m}`]
     ),
     db.getAllAsync<any>(`
       SELECT SUM(amount)/MAX(1,CAST(strftime('%d','now') AS INTEGER)) AS avg
       FROM transactions WHERE type='expense' AND strftime('%Y-%m',date)=?`,
-      [`${yyyy}-€{m}`]
+      [`${yyyy}-${m}`]
     ),
   ]);
 
@@ -674,7 +674,7 @@ export async function rolloverFromPreviousMonth(): Promise<{ amount: number; fro
   const prev         = new Date(y, m - 2, 1);
   const prevM        = prev.getMonth() + 1;
   const prevY        = prev.getFullYear();
-  const prevMonthStr = `${prevY}-€{String(prevM).padStart(2, '0')}`;
+  const prevMonthStr = `${prevY}-${String(prevM).padStart(2, '0')}`;
 
   const [prevTotals, prevMb, settingsRows] = await Promise.all([
     db.getAllAsync<any>(`
@@ -717,7 +717,7 @@ export async function getMonthHistory(months = 12): Promise<{
     const d   = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const m   = d.getMonth() + 1;
     const y   = d.getFullYear();
-    const key = `${y}-€{String(m).padStart(2, '0')}`;
+    const key = `${y}-${String(m).padStart(2, '0')}`;
 
     const [totals, mb] = await Promise.all([
       db.getAllAsync<any>(`

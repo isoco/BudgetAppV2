@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   ScrollView, View, Text, StyleSheet, RefreshControl,
   TouchableOpacity, Modal, TextInput, Alert, FlatList,
@@ -64,6 +65,13 @@ export default function DashboardScreen() {
     autoPopulateRecurring(new Date().getFullYear(), new Date().getMonth() + 1);
     loadDaySpends(todayStr());
   }, []);
+
+  // Refetch dashboard data every time this screen comes into focus
+  // (e.g. after adding a transaction and navigating back)
+  useFocusEffect(useCallback(() => {
+    refetch();
+    loadDaySpends(todayStr());
+  }, [refetch, loadDaySpends]));
 
   async function handleAddSpend() {
     const num = parseFloat(spendAmount);
