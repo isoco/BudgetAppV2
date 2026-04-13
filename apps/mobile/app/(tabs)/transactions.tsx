@@ -46,9 +46,6 @@ export default function TransactionsScreen() {
     <View style={[s.container, { backgroundColor: colors.bg }]}>
       <View style={s.header}>
         <Text style={[s.title, { color: colors.text }]}>Transactions</Text>
-        <TouchableOpacity style={s.addBtn} onPress={() => router.push('/add-transaction')}>
-          <Ionicons name="add" size={20} color="#fff" />
-        </TouchableOpacity>
       </View>
 
       <View style={s.filters}>
@@ -92,6 +89,10 @@ export default function TransactionsScreen() {
         contentContainerStyle={s.list}
         ListEmptyComponent={!loading ? <Text style={[s.empty, { color: colors.textMuted }]}>No transactions this month</Text> : null}
       />
+
+      <TouchableOpacity style={s.fab} onPress={() => router.push('/add-transaction')}>
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -100,7 +101,7 @@ const s = StyleSheet.create({
   container:      { flex: 1 },
   header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
   title:          { ...typography['2xl'], fontWeight: '700' },
-  addBtn:         { width: 36, height: 36, borderRadius: radius.full, backgroundColor: staticColors.primary, justifyContent: 'center', alignItems: 'center' },
+  fab:            { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, backgroundColor: staticColors.primary, justifyContent: 'center', alignItems: 'center', shadowColor: staticColors.primary, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
   filters:        { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
   chip:           { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, borderWidth: 1 },
   chipActive:     { backgroundColor: staticColors.primary, borderColor: staticColors.primary },

@@ -66,15 +66,26 @@ export default function DashboardScreen() {
     getSettings().then(s => {
       if (s.auto_rollover) rolloverFromPreviousMonth().then(refetch);
     });
-    autoPopulateRecurring(new Date().getFullYear(), new Date().getMonth() + 1);
     loadDaySpends(todayStr());
   }, []);
 
   useFocusEffect(useCallback(() => {
-    refetch();
-    refetchProj();
-    refetchBills();
-    refetchIncome();
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    // Catch up current + last 2 months in case recurring was set up late
+    autoPopulateRecurring(y, m).then(() => {
+      const prev1 = new Date(y, m - 2, 1);
+      return autoPopulateRecurring(prev1.getFullYear(), prev1.getMonth() + 1);
+    }).then(() => {
+      const prev2 = new Date(y, m - 3, 1);
+      return autoPopulateRecurring(prev2.getFullYear(), prev2.getMonth() + 1);
+    }).then(() => {
+      refetch();
+      refetchProj();
+      refetchBills();
+      refetchIncome();
+    });
     loadDaySpends(todayStr());
   }, [refetch, refetchProj, refetchBills, refetchIncome, loadDaySpends]));
 
@@ -236,7 +247,11 @@ export default function DashboardScreen() {
       {/* ── Daily Log ───────────────────────────────────────────────────── */}
       <View style={[s.dailyLogCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         {/* Date selector — 1st of month to today */}
-        <Text style={[s.sectionTitle, { color: colors.text, marginBottom: spacing.sm }]}>Daily Log</Text>
+        <TouchableOpacity onPress={() => router.push('/daily-tracker')} activeOpacity={0.7}>
+          <Text style={[s.sectionTitle, { color: colors.text, marginBottom: spacing.sm }]}>
+            Daily Log  <Text style={{ fontSize: 12, color: staticColors.primary }}>view all →</Text>
+          </Text>
+        </TouchableOpacity>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
           {days7.map(d => {
             const isSelected = d === selectedDate;
@@ -251,12 +266,6 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             );
           })}
-          <TouchableOpacity
-            style={[s.datePill, { borderColor: colors.border, backgroundColor: colors.surfaceHigh }]}
-            onPress={() => openDayModal(selectedDate)}
-          >
-            <Text style={[s.datePillText, { color: colors.primary }]}>All days →</Text>
-          </TouchableOpacity>
         </ScrollView>
 
         {/* Total for selected day */}
@@ -308,10 +317,6 @@ export default function DashboardScreen() {
 
       {/* Quick Links */}
       <View style={s.quickRow}>
-        <TouchableOpacity style={[s.quickBtn, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => router.push('/daily-tracker')}>
-          <Ionicons name="today-outline" size={18} color={staticColors.primary} />
-          <Text style={[s.quickLabel, { color: colors.text }]}>Calendar</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={[s.quickBtn, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => router.push('/fuel-tracker')}>
           <Ionicons name="car-outline" size={18} color={staticColors.primary} />
           <Text style={[s.quickLabel, { color: colors.text }]}>Fuel</Text>

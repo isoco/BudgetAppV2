@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getDashboardDataForMonth, Transaction, deleteTransaction } from '../src/db/queries';
+import { getDashboardDataForMonth, Transaction, deleteTransaction, autoPopulateRecurring } from '../src/db/queries';
 import { useTheme } from '../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../src/theme';
 
@@ -30,6 +30,7 @@ export default function MonthDashboardScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      await autoPopulateRecurring(year, month);
       const d = await getDashboardDataForMonth(month, year);
       setData(d);
     } finally {
@@ -82,9 +83,7 @@ export default function MonthDashboardScreen() {
           {isCurrent && <Text style={[s.badge, { color: staticColors.primary }]}>Current Month</Text>}
           {isFuture  && <Text style={[s.badge, { color: colors.textMuted }]}>Upcoming</Text>}
         </View>
-        <TouchableOpacity onPress={handleAdd} style={[s.addBtn, { backgroundColor: staticColors.primary }]}>
-          <Ionicons name="add" size={20} color="#fff" />
-        </TouchableOpacity>
+        <View style={{ width: 24 }} />
       </View>
 
       {loading ? (
@@ -162,13 +161,12 @@ export default function MonthDashboardScreen() {
             </Text>
           )}
 
-          {/* Add button (bottom) */}
-          <TouchableOpacity style={[s.addButtonLarge, { backgroundColor: staticColors.primary }]} onPress={handleAdd}>
-            <Ionicons name="add-circle-outline" size={18} color="#fff" />
-            <Text style={s.addButtonText}>Add Transaction</Text>
-          </TouchableOpacity>
         </ScrollView>
       )}
+
+      <TouchableOpacity style={[s.fab, { backgroundColor: staticColors.primary }]} onPress={handleAdd}>
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -228,8 +226,8 @@ const s = StyleSheet.create({
   header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
   title:          { ...typography.lg, fontWeight: '700' },
   badge:          { fontSize: 11, fontWeight: '600', marginTop: 2 },
-  addBtn:         { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  content:        { padding: spacing.md, paddingBottom: 48 },
+  fab:            { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
+  content:        { padding: spacing.md, paddingBottom: 100 },
   summaryCard:    { flexDirection: 'row', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm },
   vDivider:       { width: 1, marginHorizontal: spacing.sm },
   metaRow:        { flexDirection: 'row', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm },
@@ -240,6 +238,4 @@ const s = StyleSheet.create({
   txSub:          { fontSize: 11, marginTop: 1 },
   txAmt:          { fontSize: 14, fontWeight: '700' },
   empty:          { textAlign: 'center', marginTop: spacing.xl, ...typography.base },
-  addButtonLarge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: radius.lg, marginTop: spacing.xl },
-  addButtonText:  { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

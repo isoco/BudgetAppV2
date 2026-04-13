@@ -474,15 +474,15 @@ export async function autoPopulateRecurring(year: number, month: number): Promis
   );
   const monthStr = `${year}-${String(month).padStart(2,'0')}`;
   for (const cat of cats) {
+    const txType = cat.type === 'income' ? 'income' : 'expense';
     const existing = await db.getAllAsync<{count:number}>(
-      `SELECT COUNT(*) as count FROM transactions WHERE category_id=? AND strftime('%Y-%m',date)=?`,
-      [cat.id, monthStr]
+      `SELECT COUNT(*) as count FROM transactions WHERE category_id=? AND strftime('%Y-%m',date)=? AND type=? AND is_recurring=1`,
+      [cat.id, monthStr, txType]
     );
     if (existing[0].count > 0) continue;
     const daysInMonth = new Date(year, month, 0).getDate();
     const day = cat.due_day ? Math.min(cat.due_day, daysInMonth) : 1;
     const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const txType = cat.type === 'income' ? 'income' : 'expense';
     await db.runAsync(
       'INSERT INTO transactions (id, amount, type, date, category_id, is_recurring) VALUES (?,?,?,?,?,1)',
       [uuid(), cat.default_amount, txType, date, cat.id]

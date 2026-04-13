@@ -39,9 +39,6 @@ export default function GoalsScreen() {
     <View style={s.container}>
       <View style={s.header}>
         <Text style={s.title}>Goals</Text>
-        <TouchableOpacity style={s.addBtn} onPress={() => router.push('/add-goal')}>
-          <Ionicons name="add" size={20} color="#fff" />
-        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -71,6 +68,10 @@ export default function GoalsScreen() {
           ) : null
         }
       />
+
+      <TouchableOpacity style={s.fab} onPress={() => router.push('/add-goal')}>
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -79,7 +80,7 @@ const s = StyleSheet.create({
   container:    { flex: 1, backgroundColor: colors.dark.bg },
   header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
   title:        { ...typography['2xl'], color: colors.dark.text, fontWeight: '700' },
-  addBtn:       { width: 36, height: 36, borderRadius: radius.full, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
+  fab:          { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', shadowColor: colors.primary, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
   sectionLabel: { ...typography.sm, color: colors.dark.textMuted, fontWeight: '600', marginBottom: spacing.sm, marginTop: spacing.sm },
   list:         { padding: spacing.md, paddingBottom: 80 },
   empty:        { alignItems: 'center', marginTop: spacing.xl },
