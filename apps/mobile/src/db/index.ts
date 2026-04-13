@@ -123,6 +123,7 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
     'ALTER TABLE categories ADD COLUMN default_amount REAL DEFAULT 0',
     'ALTER TABLE categories ADD COLUMN due_day INTEGER',
     'ALTER TABLE transactions ADD COLUMN paid_date TEXT',
+    'ALTER TABLE fuel_entries ADD COLUMN transaction_id TEXT',
   ];
   for (const sql of migrations) {
     try { await db.execAsync(sql); } catch (_) { /* column already exists */ }

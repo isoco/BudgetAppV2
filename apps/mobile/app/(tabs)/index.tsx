@@ -33,10 +33,10 @@ export default function DashboardScreen() {
   const { colors } = useTheme();
 
   // ── data ──────────────────────────────────────────────────────────────────
-  const { data, loading, refetch } = useQuery(getDashboardData);
-  const { data: projection }       = useQuery(getEndOfMonthProjection);
-  const { data: bills = [] }       = useQuery(getUpcomingBills);
-  const { data: income_items = [] } = useQuery(getUpcomingIncome);
+  const { data, loading, refetch }              = useQuery(getDashboardData);
+  const { data: projection, refetch: refetchProj } = useQuery(getEndOfMonthProjection);
+  const { data: bills = [], refetch: refetchBills } = useQuery(getUpcomingBills);
+  const { data: income_items = [], refetch: refetchIncome } = useQuery(getUpcomingIncome);
 
   // ── daily spends ──────────────────────────────────────────────────────────
   const [selectedDate, setSelectedDate]   = useState(todayStr());
@@ -66,12 +66,13 @@ export default function DashboardScreen() {
     loadDaySpends(todayStr());
   }, []);
 
-  // Refetch dashboard data every time this screen comes into focus
-  // (e.g. after adding a transaction and navigating back)
   useFocusEffect(useCallback(() => {
     refetch();
+    refetchProj();
+    refetchBills();
+    refetchIncome();
     loadDaySpends(todayStr());
-  }, [refetch, loadDaySpends]));
+  }, [refetch, refetchProj, refetchBills, refetchIncome, loadDaySpends]));
 
   async function handleAddSpend() {
     const num = parseFloat(spendAmount);

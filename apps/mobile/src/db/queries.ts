@@ -364,14 +364,25 @@ export async function createFuelEntry(data: {
 }): Promise<void> {
   const db = await getDb();
   const price_per_liter = (data.liters && data.liters > 0) ? data.amount / data.liters : null;
+  const txId = uuid();
+  const txNote = `Fuel${data.vehicle !== 'Car' ? ` - ${data.vehicle}` : ''}${data.notes ? ` (${data.notes})` : ''}`;
   await db.runAsync(
-    'INSERT INTO fuel_entries (id, year, month, date, vehicle, amount, liters, price_per_liter, notes) VALUES (?,?,?,?,?,?,?,?,?)',
-    [uuid(), data.year, data.month, data.date, data.vehicle, data.amount, data.liters ?? null, price_per_liter, data.notes ?? null]
+    'INSERT INTO transactions (id, amount, type, date, category_id, note) VALUES (?,?,?,?,?,?)',
+    [txId, data.amount, 'expense', data.date, 'c2', txNote]
+  );
+  await db.runAsync(
+    'INSERT INTO fuel_entries (id, year, month, date, vehicle, amount, liters, price_per_liter, notes, transaction_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    [uuid(), data.year, data.month, data.date, data.vehicle, data.amount, data.liters ?? null, price_per_liter, data.notes ?? null, txId]
   );
 }
 
 export async function deleteFuelEntry(id: string): Promise<void> {
   const db = await getDb();
+  const rows = await db.getAllAsync<{ transaction_id: string | null }>(
+    'SELECT transaction_id FROM fuel_entries WHERE id = ?', [id]
+  );
+  const txId = rows[0]?.transaction_id;
+  if (txId) await db.runAsync('DELETE FROM transactions WHERE id = ?', [txId]);
   await db.runAsync('DELETE FROM fuel_entries WHERE id = ?', [id]);
 }
 
@@ -770,6 +781,26 @@ export async function exportAllData(): Promise<string> {
 
 export interface DailySpend {
   id: string; date: string; amount: number; note: string | null; created_at: string;
+}
+
+export async function getMonthExpenseTotalsByDay(year: number, month: number): Promise<Record<number, number>> {
+  const db = await getDb();
+  const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+  const rows = await db.getAllAsync<{ day: number; total: number }>(
+    `SELECT CAST(strftime('%d', date) AS INTEGER) AS day, COALESCE(SUM(amount), 0) AS total
+     FROM transactions WHERE type = 'expense' AND strftime('%Y-%m', date) = ?
+     GROUP BY day`,
+    [monthStr]
+  );
+  return Object.fromEntries(rows.map(r => [r.day, r.total]));
+}
+
+export async function getTransactionsForDate(date: string): Promise<Transaction[]> {
+  const db = await getDb();
+  return db.getAllAsync<Transaction>(
+    `${TX_SELECT} WHERE t.date = ? AND t.type = 'expense' ORDER BY t.created_at DESC`,
+    [date]
+  );
 }
 
 export async function getDailySpends(date: string): Promise<DailySpend[]> {
