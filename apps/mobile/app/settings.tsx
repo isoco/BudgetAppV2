@@ -1,0 +1,268 @@
+﻿import { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Share, Modal } from 'react-native';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { getSettings, saveSettings, rolloverFromPreviousMonth, exportAllData, importAllData, AppSettings } from '../src/db/queries';
+import { useTheme } from '../src/theme/useTheme';
+import { useThemeStore } from '../src/store/themeStore';
+import { colors as staticColors, spacing, radius, typography } from '../src/theme';
+
+export default function SettingsScreen() {
+  const { colors } = useTheme();
+  const { mode, setMode } = useThemeStore();
+  const [settings, setSettings]     = useState<AppSettings>({ daily_limit: 0, monthly_savings: 0, auto_rollover: true, theme: 'dark' });
+  const [dailyLimit, setDailyLimit] = useState('');
+  const [savings, setSavings]       = useState('');
+  const [saving, setSaving]         = useState(false);
+  const [importVisible, setImportVisible] = useState(false);
+  const [importJson, setImportJson]       = useState('');
+
+  useEffect(() => {
+    getSettings().then(s => {
+      setSettings(s);
+      setDailyLimit(s.daily_limit > 0 ? String(s.daily_limit) : '');
+      setSavings(s.monthly_savings > 0 ? String(s.monthly_savings) : '');
+    });
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const updated: Partial<AppSettings> = {
+        daily_limit:     parseFloat(dailyLimit)  || 0,
+        monthly_savings: parseFloat(savings)     || 0,
+        auto_rollover:   settings.auto_rollover,
+      };
+      await saveSettings(updated);
+      Alert.alert('Saved', 'Settings updated.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRollover() {
+    Alert.alert(
+      'Run Rollover',
+      'This will carry last month\'s remaining balance to this month. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Continue', onPress: async () => {
+          const result = await rolloverFromPreviousMonth();
+          Alert.alert('Done', `€${result.amount.toFixed(2)} leftover from ${result.fromMonth} rolled over.`);
+        }},
+      ]
+    );
+  }
+
+  async function handleExport() {
+    try {
+      const json = await exportAllData();
+      await Share.share({ message: json, title: 'Budget Export' });
+    } catch (e: any) {
+      Alert.alert('Export Failed', e.message);
+    }
+  }
+
+  async function handleImport() {
+    try {
+      await importAllData(importJson);
+      setImportVisible(false);
+      setImportJson('');
+      Alert.alert('Success', 'Data imported successfully.');
+    } catch (e: any) {
+      Alert.alert('Import Failed', e.message);
+    }
+  }
+
+  const themeOptions: Array<{ label: string; value: 'dark' | 'light' | 'system' }> = [
+    { label: 'Dark',   value: 'dark'   },
+    { label: 'Light',  value: 'light'  },
+    { label: 'System', value: 'system' },
+  ];
+
+  return (
+    <View style={[s.container, { backgroundColor: colors.bg }]}>
+      <View style={[s.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Ionicons name="close" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[s.title, { color: colors.text }]}>Settings</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <ScrollView contentContainerStyle={s.content}>
+
+        {/* Appearance */}
+        <View style={s.section}>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Appearance</Text>
+          <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Choose your preferred color theme.</Text>
+          <View style={s.themeRow}>
+            {themeOptions.map(opt => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[s.themeBtn, { borderColor: colors.border, backgroundColor: colors.surface }, mode === opt.value && { borderColor: staticColors.primary, backgroundColor: `${staticColors.primary}22` }]}
+                onPress={() => { setMode(opt.value); saveSettings({ theme: opt.value }); }}
+              >
+                <Text style={[s.themeBtnText, { color: colors.textMuted }, mode === opt.value && { color: staticColors.primary, fontWeight: '700' }]}>{opt.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={[s.divider, { backgroundColor: colors.border }]} />
+
+        {/* Daily Limit */}
+        <View style={s.section}>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Daily Spending Limit</Text>
+          <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Get a warning when you exceed this amount in a single day.</Text>
+          <View style={[s.inputRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[s.currency, { color: colors.textMuted }]}>€</Text>
+            <TextInput
+              style={[s.input, { color: colors.text }]}
+              placeholder="0.00  (disabled)"
+              placeholderTextColor={colors.textSubtle}
+              keyboardType="decimal-pad"
+              value={dailyLimit}
+              onChangeText={setDailyLimit}
+            />
+          </View>
+        </View>
+
+        <View style={[s.divider, { backgroundColor: colors.border }]} />
+
+        {/* Monthly Savings */}
+        <View style={s.section}>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Monthly Savings Target</Text>
+          <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Amount reserved from income each month before calculating your spendable balance.</Text>
+          <View style={[s.inputRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[s.currency, { color: colors.textMuted }]}>€</Text>
+            <TextInput
+              style={[s.input, { color: colors.text }]}
+              placeholder="0.00  (no target)"
+              placeholderTextColor={colors.textSubtle}
+              keyboardType="decimal-pad"
+              value={savings}
+              onChangeText={setSavings}
+            />
+          </View>
+        </View>
+
+        <View style={[s.divider, { backgroundColor: colors.border }]} />
+
+        {/* Auto Rollover */}
+        <View style={s.section}>
+          <View style={s.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.sectionTitle, { color: colors.text }]}>Auto Rollover</Text>
+              <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Carry remaining balance from last month into this month automatically on app open.</Text>
+            </View>
+            <Switch
+              value={settings.auto_rollover}
+              onValueChange={v => setSettings(prev => ({ ...prev, auto_rollover: v }))}
+              trackColor={{ true: staticColors.primary }}
+              thumbColor="#fff"
+            />
+          </View>
+        </View>
+
+        <View style={[s.divider, { backgroundColor: colors.border }]} />
+
+        {/* Manual Rollover */}
+        <View style={s.section}>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Manual Rollover</Text>
+          <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Manually carry last month's remaining balance to this month.</Text>
+          <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.primary }]} onPress={handleRollover}>
+            <Ionicons name="refresh" size={16} color={staticColors.primary} />
+            <Text style={[s.secondaryBtnText, { color: staticColors.primary }]}>Run Rollover Now</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[s.divider, { backgroundColor: colors.border }]} />
+
+        {/* Manage Categories */}
+        <TouchableOpacity style={[s.linkRow, { borderBottomColor: colors.border }]} onPress={() => router.push('/manage-categories')}>
+          <Text style={[s.linkText, { color: colors.text }]}>Manage Categories</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <View style={[s.divider, { backgroundColor: colors.border }]} />
+
+        {/* Data */}
+        <View style={s.section}>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Data</Text>
+
+          <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.primary, marginBottom: spacing.sm }]} onPress={handleExport}>
+            <Ionicons name="share-outline" size={16} color={staticColors.primary} />
+            <Text style={[s.secondaryBtnText, { color: staticColors.primary }]}>Export Data</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.warning }]} onPress={() => setImportVisible(true)}>
+            <Ionicons name="download-outline" size={16} color={staticColors.warning} />
+            <Text style={[s.secondaryBtnText, { color: staticColors.warning }]}>Import Data</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity style={[s.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
+          <Text style={s.saveBtnText}>{saving ? 'Saving…' : 'Save Settings'}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* Import Modal */}
+      <Modal visible={importVisible} animationType="slide" transparent>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { backgroundColor: colors.surface }]}>
+            <Text style={[s.modalTitle, { color: colors.text }]}>Paste JSON to Import</Text>
+            <TextInput
+              style={[s.modalInput, { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }]}
+              multiline
+              numberOfLines={8}
+              placeholder="Paste exported JSON here…"
+              placeholderTextColor={colors.textSubtle}
+              value={importJson}
+              onChangeText={setImportJson}
+            />
+            <View style={s.modalActions}>
+              <TouchableOpacity style={[s.modalBtn, { borderColor: colors.border }]} onPress={() => { setImportVisible(false); setImportJson(''); }}>
+                <Text style={[s.modalBtnText, { color: colors.textMuted }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.primary, backgroundColor: staticColors.primary }]} onPress={handleImport}>
+                <Text style={[s.modalBtnText, { color: '#fff' }]}>Import</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  container:       { flex: 1 },
+  header:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
+  title:           { ...typography.lg, fontWeight: '600' },
+  content:         { padding: spacing.md, paddingBottom: 60 },
+  section:         { paddingVertical: spacing.md },
+  sectionTitle:    { ...typography.base, fontWeight: '600', marginBottom: 4 },
+  sectionDesc:     { ...typography.sm, marginBottom: spacing.md, lineHeight: 20 },
+  inputRow:        { flexDirection: 'row', alignItems: 'center', borderRadius: radius.md, borderWidth: 1, paddingHorizontal: spacing.md },
+  currency:        { ...typography.lg, marginRight: 4 },
+  input:           { flex: 1, ...typography.lg, paddingVertical: spacing.md },
+  divider:         { height: 1 },
+  row:             { flexDirection: 'row', alignItems: 'center' },
+  secondaryBtn:    { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderRadius: radius.md, padding: spacing.md, alignSelf: 'flex-start' },
+  secondaryBtnText:{ ...typography.sm, fontWeight: '600' },
+  saveBtn:         { backgroundColor: staticColors.primary, borderRadius: radius.md, padding: spacing.md, alignItems: 'center', marginTop: spacing.lg },
+  saveBtnText:     { color: '#fff', fontWeight: '600', ...typography.base },
+  themeRow:        { flexDirection: 'row', gap: spacing.sm },
+  themeBtn:        { flex: 1, paddingVertical: spacing.sm, borderWidth: 1, borderRadius: radius.md, alignItems: 'center' },
+  themeBtnText:    { ...typography.sm, fontWeight: '500' },
+  linkRow:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.md },
+  linkText:        { ...typography.base, fontWeight: '500' },
+  modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalBox:        { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: 40 },
+  modalTitle:      { ...typography.lg, fontWeight: '700', marginBottom: spacing.md },
+  modalInput:      { borderWidth: 1, borderRadius: radius.md, padding: spacing.md, ...typography.sm, height: 160, textAlignVertical: 'top', marginBottom: spacing.md },
+  modalActions:    { flexDirection: 'row', gap: spacing.sm },
+  modalBtn:        { flex: 1, borderWidth: 1, borderRadius: radius.md, padding: spacing.md, alignItems: 'center' },
+  modalBtnText:    { ...typography.base, fontWeight: '600' },
+});

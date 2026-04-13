@@ -1,0 +1,13 @@
+{
+  "name": "budget-app-v2",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "api": "pnpm --filter api dev",
+    "mobile": "pnpm --filter mobile start",
+    "test": "pnpm --filter api test",
+    "db:migrate": "pnpm --filter api db:migrate",
+    "db:seed": "pnpm --filter api db:seed"
+  },
+  "engines": { "node": ">=20", "pnpm": ">=9" }
+}
