@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "ca050d4a-fea8-4838-87ca-76a64c443c64"
+      }
+    },
+    "android": {
+      "package": "com.isoco.budgetappv2"
+    },
+    "ios": {
+      "bundleIdentifier": "com.isoco.budgetappv2",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}
