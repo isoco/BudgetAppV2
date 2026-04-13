@@ -146,18 +146,156 @@ pnpm api          # start dev server on :3000
 
 ## Building for Production
 
-### EAS Build (Expo Application Services)
+### Option A — EAS Cloud Build (easiest, no setup)
 
 ```bash
 npm install -g eas-cli
 eas login
-eas build --platform all --profile production
+eas build -p android --profile preview   # APK for testing
+eas build -p android --profile production # AAB for Play Store
 ```
+
+No local tooling needed. Expo's servers handle the build. Free tier: 30 builds/month.
+
+---
+
+### Option B — Local APK Build on Windows (via WSL2)
+
+Android local builds require Linux. On Windows, use **WSL2** (Ubuntu).
+
+#### Step 1 — Enable WSL2
+
+Run in **PowerShell as Administrator**, then reboot:
+
+```powershell
+wsl --install
+wsl --set-default-version 2
+```
+
+Install Ubuntu 22.04 from the Microsoft Store (or `wsl --install -d Ubuntu-22.04`).
+
+#### Step 2 — Inside WSL2: install Node + pnpm
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+source ~/.bashrc
+nvm install 20
+nvm use 20
+npm install -g pnpm@9 eas-cli
+```
+
+#### Step 3 — Install Java 17
+
+```bash
+sudo apt update && sudo apt install -y openjdk-17-jdk
+java -version   # must show 17.x
+```
+
+#### Step 4 — Install Android SDK (no Android Studio needed)
+
+```bash
+sudo apt install -y wget unzip
+mkdir -p ~/android-sdk/cmdline-tools && cd ~/android-sdk/cmdline-tools
+wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+unzip commandlinetools-linux-11076708_latest.zip
+mv cmdline-tools latest
+```
+
+Add to `~/.bashrc`:
+
+```bash
+export ANDROID_HOME=$HOME/android-sdk
+export ANDROID_SDK_ROOT=$HOME/android-sdk
+export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
+export PATH=$PATH:$ANDROID_HOME/platform-tools
+export PATH=$PATH:$ANDROID_HOME/build-tools/34.0.0
+```
+
+```bash
+source ~/.bashrc
+```
+
+#### Step 5 — Install SDK packages + NDK
+
+```bash
+yes | sdkmanager --licenses
+sdkmanager \
+  "platform-tools" \
+  "platforms;android-35" \
+  "build-tools;34.0.0" \
+  "ndk;27.1.12297006" \
+  "cmake;3.22.1"
+```
+
+#### Step 6 — Copy project into WSL2 and install deps
+
+> Do NOT work from `/mnt/d/` — NTFS causes permission errors with pnpm.
+
+```bash
+rsync -av --exclude='node_modules' --exclude='.git' \
+  /mnt/d/Projekti/BudgetAppV2/ ~/BudgetAppV2/
+cd ~/BudgetAppV2
+pnpm install
+```
+
+#### Step 7 — Build the APK
+
+```bash
+eas build -p android --profile preview --local
+```
+
+First build: ~10–15 min. Subsequent builds with Gradle cache: ~3–5 min.
+
+#### Step 8 — Copy APK back to Windows
+
+```bash
+cp ~/BudgetAppV2/*.apk /mnt/d/Projekti/BudgetAppV2/
+```
+
+Install on device by transferring the `.apk` file and enabling **Install from unknown sources** in Android settings.
+
+#### Re-building after code changes
+
+```bash
+# Sync changes from Windows to WSL2
+rsync -av --exclude='node_modules' --exclude='.git' \
+  /mnt/d/Projekti/BudgetAppV2/ ~/BudgetAppV2/
+
+# Build
+cd ~/BudgetAppV2
+eas build -p android --profile preview --local
+
+# Copy APK back
+cp ~/BudgetAppV2/*.apk /mnt/d/Projekti/BudgetAppV2/
+```
+
+#### Gradle performance (optional)
+
+Add to `~/.gradle/gradle.properties`:
+
+```properties
+org.gradle.daemon=true
+org.gradle.parallel=true
+org.gradle.caching=true
+org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m
+```
+
+#### Troubleshooting
+
+| Error | Fix |
+|-------|-----|
+| `JAVA_HOME not set` | `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64` |
+| `NDK not found` | Verify `ndkVersion` in `android/build.gradle` matches installed NDK |
+| `node: not found` | Run `nvm use 20` before building |
+| `Gradle OOM` | `export GRADLE_OPTS="-Xmx4g"` |
+| `EPERM futime` on pnpm install | You're on `/mnt/` — copy project to `~/` first |
+| Slow build | Copy project to WSL2 home (`~/`) instead of running from `/mnt/d/` |
+
+---
 
 ### Submit to stores
 
 ```bash
-eas submit --platform ios
 eas submit --platform android
 ```
 
