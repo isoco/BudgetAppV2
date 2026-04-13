@@ -716,6 +716,30 @@ export async function rolloverFromPreviousMonth(): Promise<{ amount: number; fro
   };
 }
 
+export async function getMonthDetail(month: number, year: number): Promise<{
+  transactions: Transaction[];
+  recurring: { name: string; icon: string; color: string; amount: number; type: string; due_day: number | null }[];
+}> {
+  const db = await getDb();
+  const key = `${year}-${String(month).padStart(2, '0')}`;
+  const [txs, cats] = await Promise.all([
+    db.getAllAsync<Transaction>(
+      `${TX_SELECT} WHERE strftime('%Y-%m', t.date) = ? ORDER BY t.date ASC, t.created_at ASC`,
+      [key]
+    ),
+    db.getAllAsync<Category>(
+      `SELECT * FROM categories WHERE is_recurring = 1 AND is_active = 1 AND default_amount > 0`
+    ),
+  ]);
+  return {
+    transactions: txs,
+    recurring: cats.map(c => ({
+      name: c.name, icon: c.icon, color: c.color,
+      amount: c.default_amount, type: c.type, due_day: c.due_day,
+    })),
+  };
+}
+
 export async function getMonthHistory(months = 12): Promise<{
   label: string; income: number; expense: number; savings: number;
   opening: number; closing: number;
@@ -822,14 +846,24 @@ export async function getDailySpendTotal(date: string): Promise<number> {
 
 export async function createDailySpend(data: { date: string; amount: number; note?: string | null }): Promise<void> {
   const db = await getDb();
+  const txId = uuid();
   await db.runAsync(
-    'INSERT INTO daily_spends (id, date, amount, note) VALUES (?,?,?,?)',
-    [uuid(), data.date, data.amount, data.note ?? null]
+    'INSERT INTO transactions (id, amount, type, date, category_id, note) VALUES (?,?,?,?,?,?)',
+    [txId, data.amount, 'expense', data.date, 'c12', data.note ?? null]
+  );
+  await db.runAsync(
+    'INSERT INTO daily_spends (id, date, amount, note, transaction_id) VALUES (?,?,?,?,?)',
+    [uuid(), data.date, data.amount, data.note ?? null, txId]
   );
 }
 
 export async function deleteDailySpend(id: string): Promise<void> {
   const db = await getDb();
+  const rows = await db.getAllAsync<{ transaction_id: string | null }>(
+    'SELECT transaction_id FROM daily_spends WHERE id = ?', [id]
+  );
+  const txId = rows[0]?.transaction_id;
+  if (txId) await db.runAsync('DELETE FROM transactions WHERE id = ?', [txId]);
   await db.runAsync('DELETE FROM daily_spends WHERE id = ?', [id]);
 }
 

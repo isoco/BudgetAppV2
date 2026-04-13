@@ -24,10 +24,14 @@ import { SpendingChart } from '../../src/components/SpendingChart';
 const fmt  = (n: number) => `€${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const sign = (n: number) => n >= 0 ? '' : '-';
 const todayStr = () => format(new Date(), 'yyyy-MM-dd');
-const last7Days = () => Array.from({ length: 7 }, (_, i) => {
-  const d = new Date(); d.setDate(d.getDate() - i);
-  return format(d, 'yyyy-MM-dd');
-});
+const daysThisMonth = () => {
+  const today = new Date();
+  const day = today.getDate();
+  return Array.from({ length: day }, (_, i) => {
+    const d = new Date(today.getFullYear(), today.getMonth(), day - i);
+    return format(d, 'yyyy-MM-dd');
+  });
+};
 
 export default function DashboardScreen() {
   const { colors } = useTheme();
@@ -121,7 +125,7 @@ export default function DashboardScreen() {
   const dailyPct  = (daily?.limit ?? 0) > 0 ? Math.min(100, Math.round(((daily?.spent ?? 0) / daily!.limit) * 100)) : 0;
   const dailyOver = (daily?.limit ?? 0) > 0 && (daily?.spent ?? 0) > (daily?.limit ?? 0);
 
-  const days7 = last7Days();
+  const days7 = daysThisMonth();
   const daySpendTotal = daySpends.reduce((s, e) => s + e.amount, 0);
 
   const selectedDateLabel = selectedDate === todayStr()
@@ -231,7 +235,7 @@ export default function DashboardScreen() {
 
       {/* ── Daily Log ───────────────────────────────────────────────────── */}
       <View style={[s.dailyLogCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        {/* Date selector — last 7 days */}
+        {/* Date selector — 1st of month to today */}
         <Text style={[s.sectionTitle, { color: colors.text, marginBottom: spacing.sm }]}>Daily Log</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
           {days7.map(d => {
