@@ -14,7 +14,10 @@
     },
     "preview": {
       "extends": "base",
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "JAVA_HOME": "/home/isoco/.jdk17"
+      }
     },
     "production": {
       "extends": "base",
