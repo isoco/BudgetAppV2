@@ -2,7 +2,26 @@
 set -e
 
 # ─── Environment ─────────────────────────────────────────────────────────────
-export ANDROID_HOME="$HOME/android-sdk"
+
+# Detect ANDROID_HOME — try common SDK locations
+for sdk_candidate in \
+  "$HOME/Android/Sdk" \
+  "$HOME/android-sdk" \
+  "$HOME/.android/sdk" \
+  /opt/android-sdk \
+  /usr/local/lib/android/sdk; do
+  if [[ -d "$sdk_candidate/platform-tools" ]]; then
+    export ANDROID_HOME="$sdk_candidate"
+    break
+  fi
+done
+
+if [[ -z "$ANDROID_HOME" ]] || [[ ! -d "$ANDROID_HOME/platform-tools" ]]; then
+  echo "✗ Android SDK not found. Expected at ~/Android/Sdk or ~/android-sdk."
+  echo "  Install cmdline-tools, or set ANDROID_HOME before running this script."
+  exit 1
+fi
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
 
 # Detect JAVA_HOME — ~/.jdk17 first (no-sudo install), then system paths
 for candidate in \
@@ -71,15 +90,15 @@ echo "▶ Installing dependencies..."
 cd "$WSL_DST"
 pnpm install --frozen-lockfile --silent
 
-# ─── 2b. Patch gradlew with correct JAVA_HOME (EAS isolates its subprocess env)
+# ─── 2b. Patch gradlew — inject JAVA_HOME + sdk.dir at runtime inside EAS temp dir
 GRADLEW="$WSL_DST/apps/mobile/android/gradlew"
+# Remove previous patch lines
 sed -i '/^export JAVA_HOME=.*jdk/d' "$GRADLEW"
-sed -i "1a export JAVA_HOME=\"$JAVA_HOME\"" "$GRADLEW"
-echo "▶ Patched gradlew with JAVA_HOME=$JAVA_HOME"
-
-# Write sdk.dir to local.properties so Gradle can find the SDK
-echo "sdk.dir=$ANDROID_HOME" > "$WSL_DST/apps/mobile/android/local.properties"
-echo "▶ Wrote sdk.dir=$ANDROID_HOME to local.properties"
+sed -i '/^echo "sdk.dir=/d' "$GRADLEW"
+# Inject after shebang: set JAVA_HOME and write local.properties with sdk.dir
+# (EAS extracts project to /tmp/..., gradlew runs there — so we write local.properties relative to gradlew)
+sed -i "1a export JAVA_HOME=\"$JAVA_HOME\"\necho \"sdk.dir=$ANDROID_HOME\" > \"\$(dirname \"\$0\")/local.properties\"" "$GRADLEW"
+echo "▶ Patched gradlew with JAVA_HOME=$JAVA_HOME + sdk.dir=$ANDROID_HOME"
 
 # Also write to eas.json env so EAS passes it through
 EAS_JSON="$WSL_DST/apps/mobile/eas.json"

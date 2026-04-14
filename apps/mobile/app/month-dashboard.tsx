@@ -36,7 +36,18 @@ export default function MonthDashboardScreen() {
     setLoading(true);
     try {
       await autoPopulateRecurring(year, month);
-      // Cascade opening balances so this month and all following are fresh
+      await cascadeOpeningBalances(month, year);
+      const d = await getDashboardDataForMonth(month, year);
+      setData(d);
+    } finally {
+      setLoading(false);
+    }
+  }, [month, year]);
+
+  // Used after deletion — skips autoPopulateRecurring so deleted items don't get re-inserted
+  const reloadAfterDelete = useCallback(async () => {
+    setLoading(true);
+    try {
       await cascadeOpeningBalances(month, year);
       const d = await getDashboardDataForMonth(month, year);
       setData(d);
@@ -66,13 +77,13 @@ export default function MonthDashboardScreen() {
         { text: 'This Only', onPress: async () => {
           await deleteTransaction(tx.id);
           setSelectedTx(null);
-          load();
+          reloadAfterDelete();
         }},
         { text: 'All Occurrences', style: 'destructive', onPress: async () => {
           if (tx.category_id) await deleteAllRecurringByCategory(tx.category_id);
           else await deleteTransaction(tx.id);
           setSelectedTx(null);
-          load();
+          reloadAfterDelete();
         }},
       ]);
     } else {
@@ -81,7 +92,7 @@ export default function MonthDashboardScreen() {
         { text: 'Delete', style: 'destructive', onPress: async () => {
           await deleteTransaction(tx.id);
           setSelectedTx(null);
-          load();
+          reloadAfterDelete();
         }},
       ]);
     }

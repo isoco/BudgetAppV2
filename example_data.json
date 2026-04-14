@@ -1,0 +1,186 @@
+{
+  "version": 2,
+  "exported_at": "2026-04-14T12:00:00.000Z",
+  "data": {
+    "categories": [
+      { "id": "c1",  "name": "Food & Dining",    "icon": "restaurant",         "color": "#f59e0b", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c2",  "name": "Transport",         "icon": "car",                "color": "#3b82f6", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c3",  "name": "Shopping",          "icon": "bag-handle",         "color": "#ec4899", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c4",  "name": "Bills & Utilities", "icon": "flash",              "color": "#8b5cf6", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 1, "default_amount": 80,   "due_day": 10  },
+      { "id": "c5",  "name": "Health",            "icon": "heart",              "color": "#ef4444", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c6",  "name": "Entertainment",     "icon": "tv",                 "color": "#06b6d4", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c7",  "name": "Travel",            "icon": "airplane",           "color": "#f97316", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c8",  "name": "Education",         "icon": "book",               "color": "#84cc16", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c9",  "name": "Salary",            "icon": "briefcase",          "color": "#10b981", "type": "income",  "is_system": 1, "is_active": 1, "is_recurring": 1, "default_amount": 2500, "due_day": 5   },
+      { "id": "c10", "name": "Freelance",         "icon": "laptop",             "color": "#14b8a6", "type": "income",  "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c11", "name": "Investment",        "icon": "trending-up",        "color": "#6366f1", "type": "income",  "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c12", "name": "Other",             "icon": "ellipsis-horizontal","color": "#94a3b8", "type": "both",    "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c13", "name": "Emergency Fund",    "icon": "shield",             "color": "#ef4444", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c14", "name": "Vacation Fund",     "icon": "airplane",           "color": "#f97316", "type": "expense", "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      { "id": "c15", "name": "Investments",       "icon": "trending-up",        "color": "#6366f1", "type": "income",  "is_system": 1, "is_active": 1, "is_recurring": 0, "default_amount": 0,    "due_day": null },
+      {
+        "id": "cat-rent-001",
+        "name": "Rent",
+        "icon": "home",
+        "color": "#8b5cf6",
+        "type": "expense",
+        "is_system": 0,
+        "is_active": 1,
+        "is_recurring": 1,
+        "default_amount": 750,
+        "due_day": 1
+      },
+      {
+        "id": "cat-loan-001",
+        "name": "Car Loan",
+        "icon": "car",
+        "color": "#f97316",
+        "type": "expense",
+        "is_system": 0,
+        "is_active": 1,
+        "is_recurring": 1,
+        "default_amount": 280,
+        "due_day": 15
+      },
+      {
+        "id": "cat-gym-001",
+        "name": "Gym",
+        "icon": "bicycle",
+        "color": "#3b82f6",
+        "type": "expense",
+        "is_system": 0,
+        "is_active": 1,
+        "is_recurring": 1,
+        "default_amount": 45,
+        "due_day": 1
+      },
+      {
+        "id": "cat-streaming-001",
+        "name": "Streaming",
+        "icon": "tv",
+        "color": "#06b6d4",
+        "type": "expense",
+        "is_system": 0,
+        "is_active": 1,
+        "is_recurring": 1,
+        "default_amount": 25,
+        "due_day": 20
+      },
+      {
+        "id": "cat-sideincome-001",
+        "name": "Side Income",
+        "icon": "wallet",
+        "color": "#10b981",
+        "type": "income",
+        "is_system": 0,
+        "is_active": 1,
+        "is_recurring": 0,
+        "default_amount": 0,
+        "due_day": null
+      }
+    ],
+    "transactions": [
+      { "id": "tx-jan-001", "category_id": "c9",             "amount": 2500, "type": "income",  "date": "2026-01-05", "note": null,          "merchant": null,          "is_recurring": 1, "created_at": "2026-01-05 08:00:00", "paid_date": null },
+      { "id": "tx-jan-002", "category_id": "cat-rent-001",   "amount": 750,  "type": "expense", "date": "2026-01-01", "note": null,          "merchant": "Landlord",    "is_recurring": 1, "created_at": "2026-01-01 08:00:00", "paid_date": null },
+      { "id": "tx-jan-003", "category_id": "cat-loan-001",   "amount": 280,  "type": "expense", "date": "2026-01-15", "note": null,          "merchant": "Bank",        "is_recurring": 1, "created_at": "2026-01-15 08:00:00", "paid_date": null },
+      { "id": "tx-jan-004", "category_id": "c4",             "amount": 80,   "type": "expense", "date": "2026-01-10", "note": null,          "merchant": "Utilities",   "is_recurring": 1, "created_at": "2026-01-10 08:00:00", "paid_date": null },
+      { "id": "tx-jan-005", "category_id": "cat-gym-001",    "amount": 45,   "type": "expense", "date": "2026-01-01", "note": null,          "merchant": "FitLife Gym", "is_recurring": 1, "created_at": "2026-01-01 08:00:00", "paid_date": null },
+      { "id": "tx-jan-006", "category_id": "cat-streaming-001","amount": 25, "type": "expense", "date": "2026-01-20", "note": null,          "merchant": "Netflix",     "is_recurring": 1, "created_at": "2026-01-20 08:00:00", "paid_date": null },
+      { "id": "tx-jan-007", "category_id": "c1",             "amount": 320,  "type": "expense", "date": "2026-01-31", "note": "Monthly groceries", "merchant": "Supermarket", "is_recurring": 0, "created_at": "2026-01-31 18:00:00", "paid_date": null },
+      { "id": "tx-jan-008", "category_id": "c2",             "amount": 90,   "type": "expense", "date": "2026-01-31", "note": "Fuel",        "merchant": "Gas Station", "is_recurring": 0, "created_at": "2026-01-31 18:00:00", "paid_date": null },
+      { "id": "tx-jan-009", "category_id": "c3",             "amount": 150,  "type": "expense", "date": "2026-01-25", "note": null,          "merchant": "Zara",        "is_recurring": 0, "created_at": "2026-01-25 14:00:00", "paid_date": null },
+      { "id": "tx-jan-010", "category_id": "c6",             "amount": 80,   "type": "expense", "date": "2026-01-18", "note": "Cinema",      "merchant": "Cinestar",    "is_recurring": 0, "created_at": "2026-01-18 20:00:00", "paid_date": null },
+      { "id": "tx-jan-011", "category_id": "c7",             "amount": 220,  "type": "expense", "date": "2026-01-20", "note": "Weekend trip","merchant": "Booking.com", "is_recurring": 0, "created_at": "2026-01-20 10:00:00", "paid_date": null },
+
+      { "id": "tx-feb-001", "category_id": "c9",             "amount": 2500, "type": "income",  "date": "2026-02-05", "note": null,          "merchant": null,          "is_recurring": 1, "created_at": "2026-02-05 08:00:00", "paid_date": null },
+      { "id": "tx-feb-002", "category_id": "cat-rent-001",   "amount": 750,  "type": "expense", "date": "2026-02-01", "note": null,          "merchant": "Landlord",    "is_recurring": 1, "created_at": "2026-02-01 08:00:00", "paid_date": null },
+      { "id": "tx-feb-003", "category_id": "cat-loan-001",   "amount": 280,  "type": "expense", "date": "2026-02-15", "note": null,          "merchant": "Bank",        "is_recurring": 1, "created_at": "2026-02-15 08:00:00", "paid_date": null },
+      { "id": "tx-feb-004", "category_id": "c4",             "amount": 80,   "type": "expense", "date": "2026-02-10", "note": null,          "merchant": "Utilities",   "is_recurring": 1, "created_at": "2026-02-10 08:00:00", "paid_date": null },
+      { "id": "tx-feb-005", "category_id": "cat-gym-001",    "amount": 45,   "type": "expense", "date": "2026-02-01", "note": null,          "merchant": "FitLife Gym", "is_recurring": 1, "created_at": "2026-02-01 08:00:00", "paid_date": null },
+      { "id": "tx-feb-006", "category_id": "cat-streaming-001","amount": 25, "type": "expense", "date": "2026-02-20", "note": null,          "merchant": "Netflix",     "is_recurring": 1, "created_at": "2026-02-20 08:00:00", "paid_date": null },
+      { "id": "tx-feb-007", "category_id": "c1",             "amount": 290,  "type": "expense", "date": "2026-02-28", "note": "Monthly groceries", "merchant": "Supermarket", "is_recurring": 0, "created_at": "2026-02-28 18:00:00", "paid_date": null },
+      { "id": "tx-feb-008", "category_id": "c2",             "amount": 85,   "type": "expense", "date": "2026-02-28", "note": "Fuel",        "merchant": "Gas Station", "is_recurring": 0, "created_at": "2026-02-28 18:00:00", "paid_date": null },
+      { "id": "tx-feb-009", "category_id": "c10",            "amount": 400,  "type": "income",  "date": "2026-02-20", "note": "Web project", "merchant": null,          "is_recurring": 0, "created_at": "2026-02-20 10:00:00", "paid_date": null },
+      { "id": "tx-feb-010", "category_id": "c5",             "amount": 60,   "type": "expense", "date": "2026-02-14", "note": "Dentist",     "merchant": "Dental Clinic","is_recurring": 0, "created_at": "2026-02-14 11:00:00", "paid_date": null },
+      { "id": "tx-feb-011", "category_id": "c6",             "amount": 120,  "type": "expense", "date": "2026-02-28", "note": "Nightout",    "merchant": "Various",     "is_recurring": 0, "created_at": "2026-02-28 22:00:00", "paid_date": null },
+
+      { "id": "tx-mar-001", "category_id": "c9",             "amount": 2500, "type": "income",  "date": "2026-03-05", "note": null,          "merchant": null,          "is_recurring": 1, "created_at": "2026-03-05 08:00:00", "paid_date": null },
+      { "id": "tx-mar-002", "category_id": "cat-rent-001",   "amount": 750,  "type": "expense", "date": "2026-03-01", "note": null,          "merchant": "Landlord",    "is_recurring": 1, "created_at": "2026-03-01 08:00:00", "paid_date": null },
+      { "id": "tx-mar-003", "category_id": "cat-loan-001",   "amount": 280,  "type": "expense", "date": "2026-03-15", "note": null,          "merchant": "Bank",        "is_recurring": 1, "created_at": "2026-03-15 08:00:00", "paid_date": null },
+      { "id": "tx-mar-004", "category_id": "c4",             "amount": 80,   "type": "expense", "date": "2026-03-10", "note": null,          "merchant": "Utilities",   "is_recurring": 1, "created_at": "2026-03-10 08:00:00", "paid_date": null },
+      { "id": "tx-mar-005", "category_id": "cat-gym-001",    "amount": 45,   "type": "expense", "date": "2026-03-01", "note": null,          "merchant": "FitLife Gym", "is_recurring": 1, "created_at": "2026-03-01 08:00:00", "paid_date": null },
+      { "id": "tx-mar-006", "category_id": "cat-streaming-001","amount": 25, "type": "expense", "date": "2026-03-20", "note": null,          "merchant": "Netflix",     "is_recurring": 1, "created_at": "2026-03-20 08:00:00", "paid_date": null },
+      { "id": "tx-mar-007", "category_id": "c1",             "amount": 310,  "type": "expense", "date": "2026-03-31", "note": "Monthly groceries", "merchant": "Supermarket", "is_recurring": 0, "created_at": "2026-03-31 18:00:00", "paid_date": null },
+      { "id": "tx-mar-008", "category_id": "c2",             "amount": 95,   "type": "expense", "date": "2026-03-31", "note": "Fuel",        "merchant": "Gas Station", "is_recurring": 0, "created_at": "2026-03-31 18:00:00", "paid_date": null },
+      { "id": "tx-mar-009", "category_id": "c3",             "amount": 200,  "type": "expense", "date": "2026-03-22", "note": null,          "merchant": "H&M",         "is_recurring": 0, "created_at": "2026-03-22 14:00:00", "paid_date": null },
+      { "id": "tx-mar-010", "category_id": "c9",             "amount": 300,  "type": "income",  "date": "2026-03-31", "note": "Bonus",       "merchant": null,          "is_recurring": 0, "created_at": "2026-03-31 17:00:00", "paid_date": null },
+      { "id": "tx-mar-011", "category_id": "cat-sideincome-001","amount": 150,"type": "income", "date": "2026-03-28", "note": null,          "merchant": "Tutoring",    "is_recurring": 0, "created_at": "2026-03-28 20:00:00", "paid_date": null },
+      { "id": "tx-mar-012", "category_id": "c8",             "amount": 80,   "type": "expense", "date": "2026-03-15", "note": "Online course","merchant": "Udemy",      "is_recurring": 0, "created_at": "2026-03-15 09:00:00", "paid_date": null },
+
+      { "id": "tx-apr-001", "category_id": "c9",             "amount": 2500, "type": "income",  "date": "2026-04-05", "note": null,          "merchant": null,          "is_recurring": 1, "created_at": "2026-04-05 08:00:00", "paid_date": null },
+      { "id": "tx-apr-002", "category_id": "cat-rent-001",   "amount": 750,  "type": "expense", "date": "2026-04-01", "note": null,          "merchant": "Landlord",    "is_recurring": 1, "created_at": "2026-04-01 08:00:00", "paid_date": null },
+      { "id": "tx-apr-003", "category_id": "c4",             "amount": 80,   "type": "expense", "date": "2026-04-10", "note": null,          "merchant": "Utilities",   "is_recurring": 1, "created_at": "2026-04-10 08:00:00", "paid_date": null },
+      { "id": "tx-apr-004", "category_id": "cat-gym-001",    "amount": 45,   "type": "expense", "date": "2026-04-01", "note": null,          "merchant": "FitLife Gym", "is_recurring": 1, "created_at": "2026-04-01 08:00:00", "paid_date": null },
+      { "id": "tx-apr-005", "category_id": "c1",             "amount": 85,   "type": "expense", "date": "2026-04-12", "note": "Groceries",   "merchant": "Supermarket", "is_recurring": 0, "created_at": "2026-04-12 17:00:00", "paid_date": null },
+      { "id": "tx-apr-006", "category_id": "c2",             "amount": 40,   "type": "expense", "date": "2026-04-08", "note": "Fuel",        "merchant": "Gas Station", "is_recurring": 0, "created_at": "2026-04-08 10:00:00", "paid_date": null },
+      { "id": "tx-apr-007", "category_id": "c5",             "amount": 35,   "type": "expense", "date": "2026-04-11", "note": "Pharmacy",    "merchant": "Pharmacy",    "is_recurring": 0, "created_at": "2026-04-11 12:00:00", "paid_date": null },
+      { "id": "tx-apr-008", "category_id": "cat-streaming-001","amount": 25, "type": "expense", "date": "2026-04-20", "note": null,          "merchant": "Netflix",     "is_recurring": 1, "created_at": "2026-04-20 08:00:00", "paid_date": null },
+      { "id": "tx-apr-009", "category_id": "cat-loan-001",   "amount": 280,  "type": "expense", "date": "2026-04-15", "note": null,          "merchant": "Bank",        "is_recurring": 1, "created_at": "2026-04-15 08:00:00", "paid_date": null }
+    ],
+    "budgets": [
+      { "id": "bgt-001", "category_id": "c1",  "amount": 350, "month": 4, "year": 2026 },
+      { "id": "bgt-002", "category_id": "c2",  "amount": 150, "month": 4, "year": 2026 },
+      { "id": "bgt-003", "category_id": "c3",  "amount": 200, "month": 4, "year": 2026 },
+      { "id": "bgt-004", "category_id": "c6",  "amount": 100, "month": 4, "year": 2026 }
+    ],
+    "goals": [
+      {
+        "id": "goal-001",
+        "name": "Emergency Fund",
+        "icon": "🛡️",
+        "color": "#ef4444",
+        "target_amount": 5000,
+        "current_amount": 1200,
+        "deadline": "2026-12-31",
+        "is_completed": 0,
+        "created_at": "2026-01-01 00:00:00"
+      },
+      {
+        "id": "goal-002",
+        "name": "Vacation",
+        "icon": "✈️",
+        "color": "#f97316",
+        "target_amount": 2000,
+        "current_amount": 600,
+        "deadline": "2026-08-01",
+        "is_completed": 0,
+        "created_at": "2026-01-01 00:00:00"
+      },
+      {
+        "id": "goal-003",
+        "name": "New Laptop",
+        "icon": "💻",
+        "color": "#6366f1",
+        "target_amount": 1500,
+        "current_amount": 1500,
+        "deadline": null,
+        "is_completed": 1,
+        "created_at": "2026-01-01 00:00:00"
+      }
+    ],
+    "settings": [
+      { "key": "daily_limit",       "value": "30"  },
+      { "key": "monthly_savings",   "value": "300" },
+      { "key": "auto_rollover",     "value": "1"   }
+    ],
+    "month_balances": [
+      { "id": "mb-jan-2026", "month": 1, "year": 2026, "opening_balance": 0,   "savings_contribution": 0   },
+      { "id": "mb-feb-2026", "month": 2, "year": 2026, "opening_balance": 495, "savings_contribution": 0   },
+      { "id": "mb-mar-2026", "month": 3, "year": 2026, "opening_balance": 990, "savings_contribution": 0   },
+      { "id": "mb-apr-2026", "month": 4, "year": 2026, "opening_balance": 530, "savings_contribution": 300 }
+    ],
+    "daily_tracking": [],
+    "fuel_entries":   [],
+    "daily_spends":   []
+  }
+}
