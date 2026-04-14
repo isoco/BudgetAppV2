@@ -10,10 +10,9 @@ import { format } from 'date-fns';
 import {
   getDashboardData, getSettings, rolloverFromPreviousMonth,
   getUpcomingBills, getUpcomingIncome, getEndOfMonthProjection,
-  autoPopulateRecurring, UpcomingItem,
+  autoPopulateRecurring, getSavingsSummary, UpcomingItem,
   getDailySpends, createDailySpend, deleteDailySpend, DailySpend,
   getTodayTransactions, getMonthTransactionDetails, Transaction,
-  transferLastMonthBalance,
 } from '../../src/db/queries';
 import { useQuery } from '../../src/hooks/useQuery';
 import { useTheme } from '../../src/theme/useTheme';
@@ -38,10 +37,11 @@ export default function DashboardScreen() {
   const { colors } = useTheme();
 
   // ── data ──────────────────────────────────────────────────────────────────
-  const { data, loading, refetch }              = useQuery(getDashboardData);
-  const { data: projection, refetch: refetchProj } = useQuery(getEndOfMonthProjection);
-  const { data: bills = [], refetch: refetchBills } = useQuery(getUpcomingBills);
-  const { data: income_items = [], refetch: refetchIncome } = useQuery(getUpcomingIncome);
+  const { data, loading, refetch }                           = useQuery(getDashboardData);
+  const { data: projection, refetch: refetchProj }           = useQuery(getEndOfMonthProjection);
+  const { data: bills = [], refetch: refetchBills }          = useQuery(getUpcomingBills);
+  const { data: income_items = [], refetch: refetchIncome }  = useQuery(getUpcomingIncome);
+  const { data: savingsSummary, refetch: refetchSavings }    = useQuery(getSavingsSummary);
 
   // ── daily spends ──────────────────────────────────────────────────────────
   const [selectedDate, setSelectedDate]   = useState(todayStr());
@@ -67,7 +67,6 @@ export default function DashboardScreen() {
     getSettings().then(s => {
       if (s.auto_rollover) rolloverFromPreviousMonth().then(refetch);
     });
-    transferLastMonthBalance().then(refetch);
     loadDaySpends(todayStr());
   }, []);
 
@@ -87,6 +86,7 @@ export default function DashboardScreen() {
       refetchProj();
       refetchBills();
       refetchIncome();
+      refetchSavings();
     });
     loadDaySpends(todayStr());
   }, [refetch, refetchProj, refetchBills, refetchIncome, loadDaySpends]));
@@ -181,79 +181,61 @@ export default function DashboardScreen() {
           <StatChip icon="arrow-down-circle" label="Income"   value={fmt(data?.income?.this_month ?? 0)}  color={staticColors.success} />
           <View style={s.statDivider} />
           <StatChip icon="arrow-up-circle"   label="Expenses" value={fmt(data?.expense?.this_month ?? 0)} color={staticColors.danger} />
-          {savings && savings.target > 0 && (
-            <>
-              <View style={s.statDivider} />
-              <StatChip icon="save-outline" label="Savings" value={fmt(savings.target)} color={staticColors.warning} />
-            </>
-          )}
+          <View style={s.statDivider} />
+          <StatChip icon="trending-up" label="Net" value={fmt(data?.balance ?? 0)} color={(data?.balance ?? 0) >= 0 ? staticColors.success : staticColors.danger} />
         </View>
       </TouchableOpacity>
 
-      {/* End-of-Month Projection */}
-      {projection && (
-        <View style={[s.projCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={s.projRow}>
-            <View>
-              <Text style={[s.projLabel, { color: colors.textMuted }]}>Month Projection</Text>
-              <Text style={[s.projAmount, { color: (projection.projected_balance ?? 0) >= 0 ? staticColors.success : staticColors.danger }]}>
-                {sign(projection.projected_balance ?? 0)}{fmt(projection.projected_balance ?? 0)}
-              </Text>
-            </View>
-            <Text style={[s.projDays, { color: colors.textSubtle }]}>{projection.days_left} days left</Text>
+      {/* Month Projection + Savings */}
+      <View style={s.twoColRow}>
+        {projection && (
+          <View style={[s.halfCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[s.projLabel, { color: colors.textMuted }]}>Month leftover</Text>
+            <Text style={[s.projAmount, { color: (projection.projected_balance ?? 0) >= 0 ? staticColors.success : staticColors.danger }]}>
+              {sign(projection.projected_balance ?? 0)}{fmt(projection.projected_balance ?? 0)}
+            </Text>
+            <Text style={[s.projDays, { color: colors.textSubtle }]}>{projection.days_left}d left</Text>
           </View>
+        )}
+        <View style={[s.halfCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[s.projLabel, { color: colors.textMuted }]}>Savings</Text>
+          <Text style={[s.projAmount, { color: staticColors.warning }]}>{fmt(savingsSummary?.this_month ?? 0)}</Text>
+          <Text style={[s.projDays, { color: colors.textSubtle }]}>Total: {fmt(savingsSummary?.total ?? 0)}</Text>
         </View>
-      )}
+      </View>
 
-      {/* Today's Spending — tappable */}
-      {daily && daily.limit > 0 && (
-        <TouchableOpacity
-          style={[s.dailyCard, { backgroundColor: colors.surface, borderColor: dailyOver ? `${staticColors.danger}66` : colors.border }]}
-          onPress={openTodayModal}
-          activeOpacity={0.8}
-        >
-          <View style={s.dailyHeader}>
-            <View>
-              <Text style={[s.dailyTitle, { color: colors.textMuted }]}>Today's Spending  <Text style={{ fontSize: 11, opacity: 0.6 }}>tap to view</Text></Text>
-              <Text style={[s.dailyAmount, { color: colors.text }, dailyOver && { color: staticColors.danger }]}>
-                {fmt(daily.spent)} <Text style={[s.dailyOf, { color: colors.textMuted }]}>/ {fmt(daily.limit)}</Text>
+      {/* ── Daily Log (merged with today's spending) ──────────────────── */}
+      <View style={[s.dailyLogCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={s.dailyLogHeader}>
+          <TouchableOpacity onPress={() => router.push('/daily-tracker')} activeOpacity={0.7}>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>
+              Daily Log  <Text style={{ fontSize: 12, color: staticColors.primary }}>view all →</Text>
+            </Text>
+          </TouchableOpacity>
+          {/* Today's spending summary — tap to view transactions */}
+          {daily && daily.limit > 0 && selectedDate === todayStr() && (
+            <TouchableOpacity
+              onPress={openTodayModal}
+              style={[s.todayBadge, { backgroundColor: dailyOver ? `${staticColors.danger}22` : colors.surfaceHigh, borderColor: dailyOver ? staticColors.danger : colors.border }]}
+            >
+              <Text style={[s.todayBadgeText, { color: dailyOver ? staticColors.danger : colors.text }]}>
+                {fmt(daily.spent)} / {fmt(daily.limit)}
               </Text>
-            </View>
-            <View style={[s.dailyBadge, { backgroundColor: colors.surfaceHigh }]}>
               {dailyOver
-                ? <Text style={[s.dailyBadgeText, { color: staticColors.danger }]}>Over by {fmt(daily.spent - daily.limit)}</Text>
-                : <Text style={[s.dailyBadgeText, { color: staticColors.success }]}>{fmt(daily.remaining)} left</Text>
+                ? <Text style={[s.todayOverText, { color: staticColors.danger }]}>over</Text>
+                : <Text style={[s.todayOverText, { color: staticColors.success }]}>{fmt(daily.remaining)} left</Text>
               }
-            </View>
-          </View>
-          <View style={[s.track, { backgroundColor: colors.surfaceHigh }]}>
+            </TouchableOpacity>
+          )}
+        </View>
+        {daily && daily.limit > 0 && selectedDate === todayStr() && (
+          <View style={[s.track, { backgroundColor: colors.surfaceHigh, marginBottom: spacing.sm }]}>
             <View style={[s.trackBar, {
               width: `${dailyPct}%` as any,
               backgroundColor: dailyOver ? staticColors.danger : dailyPct > 80 ? staticColors.warning : staticColors.success,
             }]} />
           </View>
-        </TouchableOpacity>
-      )}
-
-      {/* Safe to spend */}
-      {(data?.safe_to_spend ?? 0) > 0 && (
-        <View style={[s.safeCard, { backgroundColor: colors.surface, borderColor: `${staticColors.success}33` }]}>
-          <Ionicons name="shield-checkmark" size={20} color={staticColors.success} />
-          <View style={{ marginLeft: spacing.sm, flex: 1 }}>
-            <Text style={[s.safeLabel, { color: colors.textMuted }]}>Safe to spend per day</Text>
-            <Text style={s.safeAmount}>{fmt(data!.safe_to_spend)}</Text>
-          </View>
-        </View>
-      )}
-
-      {/* ── Daily Log ───────────────────────────────────────────────────── */}
-      <View style={[s.dailyLogCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        {/* Date selector — 1st of month to today */}
-        <TouchableOpacity onPress={() => router.push('/daily-tracker')} activeOpacity={0.7}>
-          <Text style={[s.sectionTitle, { color: colors.text, marginBottom: spacing.sm }]}>
-            Daily Log  <Text style={{ fontSize: 12, color: staticColors.primary }}>view all →</Text>
-          </Text>
-        </TouchableOpacity>
+        )}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
           {days7.map(d => {
             const isSelected = d === selectedDate;
@@ -570,24 +552,18 @@ const s = StyleSheet.create({
   balanceAmount:     { ...typography['3xl'], color: '#fff', fontWeight: '700', marginBottom: spacing.md },
   balanceRow:        { flexDirection: 'row', justifyContent: 'space-around' },
   statDivider:       { width: 1, backgroundColor: 'rgba(255,255,255,0.2)' },
-  projCard:          { borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1 },
-  projRow:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  twoColRow:         { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  halfCard:          { flex: 1, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1 },
   projLabel:         { ...typography.xs, marginBottom: 4 },
   projAmount:        { ...typography.xl, fontWeight: '700' },
-  projDays:          { ...typography.sm },
-  dailyCard:         { borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1 },
-  dailyHeader:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.sm },
-  dailyTitle:        { ...typography.xs, marginBottom: 4 },
-  dailyAmount:       { ...typography.xl, fontWeight: '700' },
-  dailyOf:           { ...typography.base, fontWeight: '400' },
-  dailyBadge:        { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.full },
-  dailyBadgeText:    { ...typography.xs, fontWeight: '600' },
+  projDays:          { ...typography.xs, marginTop: 2 },
   track:             { height: 6, borderRadius: radius.full, overflow: 'hidden' },
   trackBar:          { height: '100%', borderRadius: radius.full },
-  safeCard:          { borderRadius: radius.lg, padding: spacing.md, flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md, borderWidth: 1 },
-  safeLabel:         { ...typography.xs },
-  safeAmount:        { ...typography.lg, color: staticColors.success, fontWeight: '700' },
   dailyLogCard:      { borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1 },
+  dailyLogHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  todayBadge:        { borderRadius: radius.full, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 3, alignItems: 'flex-end' },
+  todayBadgeText:    { ...typography.xs, fontWeight: '700' },
+  todayOverText:     { ...typography.xs, fontWeight: '600' },
   datePill:          { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, borderWidth: 1, marginRight: spacing.xs },
   datePillText:      { ...typography.xs, fontWeight: '600' },
   dayTotal:          { ...typography.sm, marginBottom: spacing.sm },

@@ -1,16 +1,18 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, TextInput,
 } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getDashboardDataForMonth, Transaction, deleteTransaction, autoPopulateRecurring } from '../src/db/queries';
+import {
+  getDashboardDataForMonth, Transaction, deleteTransaction,
+  autoPopulateRecurring, cascadeOpeningBalances, updateMonthlySavings,
+} from '../src/db/queries';
 import { useTheme } from '../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../src/theme';
 
-const fmt     = (n: number) => `€${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtShort = (n: number) => `€${Math.abs(n).toFixed(0)}`;
+const fmt = (n: number) => `€${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function MonthDashboardScreen() {
   const { colors } = useTheme();
@@ -18,19 +20,23 @@ export default function MonthDashboardScreen() {
   const month = parseInt(mParam ?? '0');
   const year  = parseInt(yParam ?? '0');
 
-  const now         = new Date();
-  const isCurrent   = month === now.getMonth() + 1 && year === now.getFullYear();
-  const isFuture    = year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth() + 1);
+  const now       = new Date();
+  const isCurrent = month === now.getMonth() + 1 && year === now.getFullYear();
+  const isFuture  = year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth() + 1);
 
   const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const [data, setData]       = useState<Awaited<ReturnType<typeof getDashboardDataForMonth>> | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData]             = useState<Awaited<ReturnType<typeof getDashboardDataForMonth>> | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [editingSavings, setEditingSavings] = useState(false);
+  const [savingsInput, setSavingsInput]     = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       await autoPopulateRecurring(year, month);
+      // Cascade opening balances so this month and all following are fresh
+      await cascadeOpeningBalances(month, year);
       const d = await getDashboardDataForMonth(month, year);
       setData(d);
     } finally {
@@ -40,22 +46,16 @@ export default function MonthDashboardScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Default date for adding transactions: first of the month, or today if current/past
   function getDefaultDate() {
-    if (isCurrent) return undefined; // add-transaction uses today by default
+    if (isCurrent) return undefined;
     if (isFuture)  return `${year}-${String(month).padStart(2, '0')}-01`;
-    // past month — use last day of that month
     const lastDay = new Date(year, month, 0).getDate();
     return `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
   }
 
   function handleAdd() {
     const defaultDate = getDefaultDate();
-    if (defaultDate) {
-      router.push(`/add-transaction?defaultDate=${defaultDate}`);
-    } else {
-      router.push('/add-transaction');
-    }
+    router.push(defaultDate ? `/add-transaction?defaultDate=${defaultDate}` : '/add-transaction');
   }
 
   async function handleDelete(id: string) {
@@ -66,6 +66,14 @@ export default function MonthDashboardScreen() {
         load();
       }},
     ]);
+  }
+
+  async function saveSavings() {
+    const num = parseFloat(savingsInput);
+    if (isNaN(num) || num < 0) return Alert.alert('Enter a valid amount');
+    await updateMonthlySavings(month, year, num);
+    setEditingSavings(false);
+    load();
   }
 
   const incomeTxs  = data?.transactions.filter(t => t.type === 'income')  ?? [];
@@ -91,7 +99,7 @@ export default function MonthDashboardScreen() {
       ) : (
         <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
 
-          {/* Summary card */}
+          {/* Summary card — balance = income - expense (savings separate) */}
           <View style={[s.summaryCard, { backgroundColor: staticColors.primary + '18' }]}>
             <SummaryChip label="Income"   value={fmt(data?.income ?? 0)}  color={staticColors.success} />
             <View style={[s.vDivider, { backgroundColor: colors.border }]} />
@@ -104,21 +112,56 @@ export default function MonthDashboardScreen() {
             />
           </View>
 
-          {/* Opening balance / savings */}
-          {((data?.opening ?? 0) > 0 || (data?.savings ?? 0) > 0) && (
-            <View style={[s.metaRow, { backgroundColor: colors.surface }]}>
-              {(data?.opening ?? 0) > 0 && (
-                <MetaItem label="Opening balance" value={fmt(data!.opening)} color={staticColors.primary} />
-              )}
-              {(data?.savings ?? 0) > 0 && (
-                <MetaItem label="Savings set aside" value={fmt(data!.savings)} color={staticColors.warning} />
+          {/* Savings row — always shown, editable */}
+          <View style={[s.savingsRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Ionicons name="wallet-outline" size={18} color={staticColors.warning} style={{ marginRight: spacing.sm }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[s.savingsLabel, { color: colors.textMuted }]}>Savings this month</Text>
+              {editingSavings ? (
+                <View style={s.savingsEditRow}>
+                  <TextInput
+                    value={savingsInput}
+                    onChangeText={setSavingsInput}
+                    keyboardType="decimal-pad"
+                    autoFocus
+                    style={[s.savingsInput, { color: colors.text, borderColor: colors.border }]}
+                  />
+                  <TouchableOpacity onPress={saveSavings} style={s.savingsBtn}>
+                    <Ionicons name="checkmark" size={18} color={staticColors.success} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setEditingSavings(false)} style={s.savingsBtn}>
+                    <Ionicons name="close" size={18} color={colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={() => { setSavingsInput(String(data?.savings ?? 0)); setEditingSavings(true); }}>
+                  <Text style={[s.savingsValue, { color: staticColors.warning }]}>
+                    {fmt(data?.savings ?? 0)}
+                    <Text style={[s.savingsHint, { color: colors.textSubtle }]}> · tap to edit</Text>
+                  </Text>
+                </TouchableOpacity>
               )}
             </View>
+          </View>
+
+          {/* Leftover from previous month */}
+          {(data?.opening ?? 0) > 0 && (
+            <Section label="Leftover from previous month" color={staticColors.primary}>
+              <View style={[s.txRow, { borderColor: colors.border }]}>
+                <View style={[s.dot, { backgroundColor: staticColors.primary }]} />
+                <Ionicons name="return-down-forward" size={14} color={staticColors.primary} />
+                <Text style={[s.txName, { color: colors.text, flex: 1 }]}>Carried over</Text>
+                <Text style={[s.txAmt, { color: staticColors.primary }]}>+{fmt(data!.opening)}</Text>
+              </View>
+            </Section>
           )}
 
-          {/* Recurring (future / no transactions yet) */}
-          {isFuture && (data?.recurring ?? []).length > 0 && (
-            <Section label="Expected (recurring)" color={colors.textMuted}>
+          {/* Recurring items — visible for all months */}
+          {(data?.recurring ?? []).length > 0 && (
+            <Section
+              label={isFuture ? 'Expected (recurring)' : 'Recurring'}
+              color={colors.textMuted}
+            >
               {data!.recurring.map((r, i) => (
                 <View key={i} style={[s.txRow, { borderColor: colors.border }]}>
                   <View style={[s.dot, { backgroundColor: r.color }]} />
@@ -126,7 +169,7 @@ export default function MonthDashboardScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={[s.txName, { color: colors.text }]}>{r.name}</Text>
                     {r.due_day != null && (
-                      <Text style={[s.txSub, { color: colors.textSubtle }]}>Due day {r.due_day}</Text>
+                      <Text style={[s.txSub, { color: colors.textSubtle }]}>Day {r.due_day} · {fmt(r.amount)}</Text>
                     )}
                   </View>
                   <Text style={[s.txAmt, { color: r.type === 'income' ? staticColors.success : staticColors.danger }]}>
@@ -180,15 +223,6 @@ function SummaryChip({ label, value, color }: { label: string; value: string; co
   );
 }
 
-function MetaItem({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <View style={{ flex: 1, alignItems: 'center' }}>
-      <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginBottom: 2 }}>{label}</Text>
-      <Text style={{ fontSize: 13, fontWeight: '600', color }}>{value}</Text>
-    </View>
-  );
-}
-
 function Section({ label, color, children }: { label: string; color: string; children: React.ReactNode }) {
   return (
     <>
@@ -209,6 +243,7 @@ function TxRow({ tx, sign, color, colors, onDelete }: {
       delayLongPress={400}
     >
       {tx.category_color && <View style={[s.dot, { backgroundColor: tx.category_color }]} />}
+      {tx.is_recurring === 1 && <Ionicons name="repeat" size={12} color={colors.textSubtle} />}
       <View style={{ flex: 1 }}>
         <Text style={[s.txName, { color: colors.text }]}>{tx.category_name ?? 'Uncategorized'}</Text>
         {(tx.merchant || tx.note) && (
@@ -222,20 +257,26 @@ function TxRow({ tx, sign, color, colors, onDelete }: {
 }
 
 const s = StyleSheet.create({
-  container:      { flex: 1 },
-  header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
-  title:          { ...typography.lg, fontWeight: '700' },
-  badge:          { fontSize: 11, fontWeight: '600', marginTop: 2 },
-  fab:            { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
-  content:        { padding: spacing.md, paddingBottom: 100 },
-  summaryCard:    { flexDirection: 'row', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm },
-  vDivider:       { width: 1, marginHorizontal: spacing.sm },
-  metaRow:        { flexDirection: 'row', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm },
-  sectionLabel:   { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: spacing.md, marginBottom: spacing.xs },
-  txRow:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: spacing.sm },
-  dot:            { width: 8, height: 8, borderRadius: 4 },
-  txName:         { fontSize: 14, fontWeight: '500' },
-  txSub:          { fontSize: 11, marginTop: 1 },
-  txAmt:          { fontSize: 14, fontWeight: '700' },
-  empty:          { textAlign: 'center', marginTop: spacing.xl, ...typography.base },
+  container:    { flex: 1 },
+  header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
+  title:        { ...typography.lg, fontWeight: '700' },
+  badge:        { fontSize: 11, fontWeight: '600', marginTop: 2 },
+  fab:          { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
+  content:      { padding: spacing.md, paddingBottom: 100 },
+  summaryCard:  { flexDirection: 'row', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm },
+  vDivider:     { width: 1, marginHorizontal: spacing.sm },
+  savingsRow:   { flexDirection: 'row', alignItems: 'center', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1 },
+  savingsLabel: { fontSize: 11, marginBottom: 2 },
+  savingsValue: { fontSize: 15, fontWeight: '700' },
+  savingsHint:  { fontSize: 11, fontWeight: '400' },
+  savingsEditRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  savingsInput: { flex: 1, fontSize: 15, borderBottomWidth: 1, paddingVertical: 2 },
+  savingsBtn:   { padding: 4 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: spacing.md, marginBottom: spacing.xs },
+  txRow:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: spacing.sm },
+  dot:          { width: 8, height: 8, borderRadius: 4 },
+  txName:       { fontSize: 14, fontWeight: '500' },
+  txSub:        { fontSize: 11, marginTop: 1 },
+  txAmt:        { fontSize: 14, fontWeight: '700' },
+  empty:        { textAlign: 'center', marginTop: spacing.xl, ...typography.base },
 });

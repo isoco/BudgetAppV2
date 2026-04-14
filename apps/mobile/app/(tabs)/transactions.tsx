@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { getTransactions, deleteTransaction, markTransactionPaid, Transaction } from '../../src/db/queries';
+import { getTransactions, deleteTransaction, markTransactionPaid, cascadeOpeningBalances, Transaction } from '../../src/db/queries';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
 import { TransactionItem } from '../../src/components/TransactionItem';
@@ -48,7 +48,12 @@ export default function TransactionsScreen() {
     Alert.alert('Delete', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
+        const tx = transactions.find(t => t.id === id);
         await deleteTransaction(id);
+        if (tx) {
+          const [y, m] = tx.date.split('-').map(Number);
+          await cascadeOpeningBalances(m, y);
+        }
         setTransactions(prev => prev.filter(t => t.id !== id));
       }},
     ]);

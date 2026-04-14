@@ -256,10 +256,16 @@ Install on device by transferring the `.apk` file and enabling **Install from un
 
 #### Re-building after code changes
 
-A single script handles sync → build → versioned copy:
+A single script handles sync → build → versioned copy.
 
+**Laptop** (project on `C:` drive):
 ```bash
 bash /mnt/c/Users/Ivan/Projekti/BudgetAppV2/build.sh
+```
+
+**PC** (project on `D:` drive):
+```bash
+bash /mnt/d/Projekti/BudgetAppV2/build-pc.sh
 ```
 
 The APK is saved to `C:\Users\Ivan\OneDrive\Aplikacija test\BudgetApp_V{X.Y}.apk`.

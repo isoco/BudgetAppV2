@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../src/theme/useTheme';
 import {
   Category, getCategories, createCategory, updateCategory,
-  deleteCategory, toggleCategoryActive,
+  deleteCategory, toggleCategoryActive, refreshRecurringAllFutureMonths,
 } from '../src/db/queries';
 
 const ICONS = [
@@ -89,6 +89,10 @@ export default function ManageCategoriesScreen() {
         await updateCategory(editingId, data);
       } else {
         await createCategory({ ...data, is_system: 0, is_active: 1 } as any);
+      }
+      // If recurring, refresh all future months with updated values
+      if (data.is_recurring && data.default_amount > 0) {
+        await refreshRecurringAllFutureMonths();
       }
       setModalVisible(false);
       load();

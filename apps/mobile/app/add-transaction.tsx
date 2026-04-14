@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert,
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
-import { getCategories, createTransaction, updateCategory } from '../src/db/queries';
+import { getCategories, createTransaction, updateCategory, refreshRecurringAllFutureMonths, cascadeOpeningBalances, autoPopulateRecurring } from '../src/db/queries';
 import { useQuery } from '../src/hooks/useQuery';
 import { useTheme } from '../src/theme/useTheme';
 
@@ -35,18 +35,28 @@ export default function AddTransactionScreen() {
     }
     setSaving(true);
     try {
-      await createTransaction({
-        amount: num, type, date: defaultDate ?? format(new Date(), 'yyyy-MM-dd'),
-        category_id: catId, note: note || null, merchant: merchant || null,
-      });
-      // If recurring, update the category
       if (recurring && catId) {
+        // Recurring: mark category and auto-populate all months on the correct due_day.
+        // Do NOT also create a manual transaction — refreshRecurringAllFutureMonths handles it.
         const day = parseInt(recurringDay);
-        await updateCategory(catId, {
-          is_recurring: 1,
-          default_amount: num,
-          due_day: day,
+        await updateCategory(catId, { is_recurring: 1, default_amount: num, due_day: day });
+        await refreshRecurringAllFutureMonths();
+        // Also back-fill current and last 2 months in case they were already past
+        const now = new Date();
+        const y = now.getFullYear(), m = now.getMonth() + 1;
+        const prev1 = new Date(y, m - 2, 1);
+        const prev2 = new Date(y, m - 3, 1);
+        await autoPopulateRecurring(prev1.getFullYear(), prev1.getMonth() + 1);
+        await autoPopulateRecurring(prev2.getFullYear(), prev2.getMonth() + 1);
+      } else {
+        // Non-recurring: create a single transaction on the chosen date
+        const txDate = defaultDate ?? format(new Date(), 'yyyy-MM-dd');
+        await createTransaction({
+          amount: num, type, date: txDate,
+          category_id: catId, note: note || null, merchant: merchant || null,
         });
+        const [txYear, txMonth] = txDate.split('-').map(Number);
+        await cascadeOpeningBalances(txMonth, txYear);
       }
       router.back();
     } catch (e) {

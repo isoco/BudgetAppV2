@@ -284,9 +284,9 @@ async function _getUpcoming(type: 'income' | 'expense'): Promise<UpcomingItem[]>
 
     const dueDate = `${y}-${String(m).padStart(2,'0')}-${String(effectiveDueDay).padStart(2,'0')}`;
 
-    // Check if already has a transaction this month
+    // Check if already has a recurring transaction this month
     const existing = await db.getAllAsync<{count:number}>(
-      `SELECT COUNT(*) as count FROM transactions WHERE category_id = ? AND strftime('%Y-%m', date) = ? AND type = ?`,
+      `SELECT COUNT(*) as count FROM transactions WHERE category_id = ? AND strftime('%Y-%m', date) = ? AND type = ? AND is_recurring = 1`,
       [cat.id, `${y}-${String(m).padStart(2,'0')}`, type]
     );
     if (existing[0].count > 0) continue;
@@ -422,7 +422,7 @@ export async function getYearOverview(year: number): Promise<{
       month: m,
       label: monthNames[m - 1],
       income, expense, savings,
-      balance: opening + income - savings - expense,
+      balance: opening + income - expense,
     });
   }
   return result;
@@ -511,9 +511,9 @@ export async function getEndOfMonthProjection(): Promise<{
   const savingsTarget    = mb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
   const projected_income = actuals[0]?.income ?? 0;
   const projected_expense = Math.max(actuals[0]?.expense ?? 0, budgets[0]?.total ?? 0);
-  const projected_balance = opening + projected_income - savingsTarget - projected_expense;
+  const projected_balance = opening + projected_income - projected_expense;
 
-  return { projected_income, projected_expense, projected_balance, days_left };
+  return { projected_income, projected_expense, projected_balance, savings_target: savingsTarget, days_left };
 }
 
 // ─── Auto-Populate Recurring ──────────────────────────────────────────────────
@@ -541,6 +541,171 @@ export async function autoPopulateRecurring(year: number, month: number): Promis
   }
 }
 
+/**
+ * Deletes all auto-populated recurring transactions for all months >= current month,
+ * then re-populates them with current category settings.
+ * Call this whenever a recurring category is created or updated.
+ */
+export async function refreshRecurringAllFutureMonths(futureMonths = 13): Promise<void> {
+  const db  = await getDb();
+  const now = new Date();
+  const m   = now.getMonth() + 1;
+  const y   = now.getFullYear();
+
+  const cats = await db.getAllAsync<Category>(
+    `SELECT * FROM categories WHERE is_recurring = 1 AND is_active = 1 AND default_amount > 0`
+  );
+
+  for (let i = 0; i < futureMonths; i++) {
+    const d       = new Date(y, m - 1 + i, 1);
+    const month   = d.getMonth() + 1;
+    const year    = d.getFullYear();
+    const monthStr = `${year}-${String(month).padStart(2,'0')}`;
+
+    for (const cat of cats) {
+      const txType = cat.type === 'income' ? 'income' : 'expense';
+      // Delete old auto-populated entry for this category+month
+      await db.runAsync(
+        `DELETE FROM transactions WHERE category_id=? AND strftime('%Y-%m',date)=? AND type=? AND is_recurring=1`,
+        [cat.id, monthStr, txType]
+      );
+      // Re-insert with current values
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const day  = cat.due_day ? Math.min(cat.due_day, daysInMonth) : 1;
+      const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      await db.runAsync(
+        'INSERT INTO transactions (id, amount, type, date, category_id, is_recurring) VALUES (?,?,?,?,?,1)',
+        [uuid(), cat.default_amount, txType, date, cat.id]
+      );
+    }
+  }
+}
+
+/**
+ * Computes and stores the opening balance for any month by walking back
+ * through previous months until it finds stored data or reaches the beginning.
+ */
+/**
+ * Returns the opening_balance for a month from month_balances.
+ * Call cascadeOpeningBalances() first to ensure the value is current.
+ */
+export async function computeMonthOpening(month: number, year: number): Promise<number> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<MonthBalance>(
+    'SELECT opening_balance FROM month_balances WHERE month=? AND year=?', [month, year]
+  );
+  return rows[0]?.opening_balance ?? 0;
+}
+
+/**
+ * Recomputes opening_balance for ALL months from the earliest transaction to
+ * (month + forwardMonths). Always starts from scratch so every carryover is correct
+ * regardless of whether intermediate months were ever viewed.
+ */
+export async function cascadeOpeningBalances(month: number, year: number, forwardMonths = 15): Promise<void> {
+  const db = await getDb();
+
+  // Find earliest month with any transaction data
+  const earliest = await db.getAllAsync<{ ym: string | null }>(
+    `SELECT strftime('%Y-%m', MIN(date)) AS ym FROM transactions`
+  );
+  const ymStr = earliest[0]?.ym;
+
+  let startMonth: number;
+  let startYear: number;
+  if (ymStr) {
+    const [ey, em] = ymStr.split('-').map(Number);
+    // Start one month BEFORE earliest so that month gets opening=0
+    const startDate = new Date(ey, em - 1, 1); // earliest date itself
+    startMonth = startDate.getMonth() + 1;
+    startYear  = startDate.getFullYear();
+  } else {
+    startMonth = month;
+    startYear  = year;
+  }
+
+  // End month = (month, year) + forwardMonths
+  const endDate  = new Date(year, month - 1 + forwardMonths, 1);
+  const endMonth = endDate.getMonth() + 1;
+  const endYear  = endDate.getFullYear();
+  const totalSteps = (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
+  if (totalSteps <= 0) return;
+
+  const settingsRows = await db.getAllAsync<any>('SELECT key, value FROM settings');
+  const cfg: Record<string, number> = {};
+  for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
+
+  // Walk from earliest month forward, carrying the running balance
+  let runningOpening = 0;
+
+  for (let i = 0; i < totalSteps; i++) {
+    const d = new Date(startYear, startMonth - 1 + i, 1);
+    const m = d.getMonth() + 1;
+    const y = d.getFullYear();
+    const key = `${y}-${String(m).padStart(2,'0')}`;
+
+    // Persist opening for this month (keep existing savings_contribution)
+    const currMb = await db.getAllAsync<MonthBalance>(
+      'SELECT * FROM month_balances WHERE month=? AND year=?', [m, y]
+    );
+    const savings = currMb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
+    await db.runAsync(
+      `INSERT INTO month_balances (id, month, year, opening_balance, savings_contribution)
+       VALUES (?,?,?,?,?)
+       ON CONFLICT(month,year) DO UPDATE SET opening_balance=excluded.opening_balance`,
+      [uuid(), m, y, runningOpening, savings]
+    );
+
+    // Read this month's transactions to compute NEXT month's opening
+    const totals = await db.getAllAsync<any>(
+      `SELECT COALESCE(SUM(CASE WHEN type='income'  THEN amount ELSE 0 END),0) AS income,
+              COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense
+       FROM transactions WHERE strftime('%Y-%m', date) = ?`, [key]
+    );
+    const income  = totals[0]?.income  ?? 0;
+    const expense = totals[0]?.expense ?? 0;
+    runningOpening = Math.max(0, runningOpening + income - expense);
+  }
+}
+
+/**
+ * Update only the savings_contribution for a month.
+ */
+export async function updateMonthlySavings(month: number, year: number, savings: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO month_balances (id, month, year, opening_balance, savings_contribution)
+     VALUES (?,?,?,0,?)
+     ON CONFLICT(month,year) DO UPDATE SET savings_contribution=excluded.savings_contribution`,
+    [uuid(), month, year, savings]
+  );
+}
+
+/**
+ * Returns total savings accumulated across all months + this month's target.
+ */
+export async function getSavingsSummary(): Promise<{ total: number; this_month: number }> {
+  const db   = await getDb();
+  const now  = new Date();
+  const m    = now.getMonth() + 1;
+  const y    = now.getFullYear();
+  const [totRow, mbRow, settingsRows] = await Promise.all([
+    db.getAllAsync<{ total: number }>(
+      'SELECT COALESCE(SUM(savings_contribution),0) AS total FROM month_balances'
+    ),
+    db.getAllAsync<MonthBalance>(
+      'SELECT * FROM month_balances WHERE month=? AND year=?', [m, y]
+    ),
+    db.getAllAsync<any>('SELECT key, value FROM settings'),
+  ]);
+  const cfg: Record<string, number> = {};
+  for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
+  return {
+    total:      totRow[0]?.total ?? 0,
+    this_month: mbRow[0]?.savings_contribution ?? cfg.monthly_savings ?? 0,
+  };
+}
+
 // ─── Insights / Dashboard ─────────────────────────────────────────────────────
 
 export async function getDashboardData() {
@@ -552,6 +717,9 @@ export async function getDashboardData() {
   const lastMonthDt  = new Date(y, m - 2, 1);
   const lastMonthStr = `${lastMonthDt.getFullYear()}-${String(lastMonthDt.getMonth() + 1).padStart(2, '0')}`;
 
+  // Ensure opening balance is computed for current month
+  const openingBalance = await computeMonthOpening(m, y);
+
   const [totals, cats, recent, mbRows, settings] = await Promise.all([
     db.getAllAsync<any>(`
       SELECT
@@ -559,7 +727,7 @@ export async function getDashboardData() {
         SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS expense_this,
         SUM(CASE WHEN type='income'  AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS income_last,
         SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS expense_last,
-        SUM(CASE WHEN type='expense' AND date=date('now') THEN amount ELSE 0 END)         AS spent_today
+        SUM(CASE WHEN type='expense' AND date=date('now') AND is_recurring=0 THEN amount ELSE 0 END) AS spent_today
       FROM transactions`,
       [thisMonth, thisMonth, lastMonthStr, lastMonthStr]
     ),
@@ -587,10 +755,10 @@ export async function getDashboardData() {
   const cfg: Record<string, number | string> = {};
   for (const row of settings) cfg[row.key] = row.value;
 
-  const openingBalance = mbRows[0]?.opening_balance ?? 0;
   const savingsTarget  = mbRows[0]?.savings_contribution ?? parseFloat(cfg.monthly_savings as string || '0');
   const dailyLimit     = parseFloat(cfg.daily_limit as string || '0');
-  const available      = openingBalance + incomeThis - savingsTarget - expenseThis;
+  // Savings is separate — available = what's actually spendable (opening + income - expenses)
+  const available      = openingBalance + incomeThis - expenseThis;
 
   // Get previous month name for rollover label
   const prevMonthDate = new Date(y, m - 2, 1);
@@ -753,11 +921,10 @@ export async function rolloverFromPreviousMonth(): Promise<{ amount: number; fro
   const cfg: Record<string, number> = {};
   for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
 
-  const prevOpening = prevMb[0]?.opening_balance      ?? 0;
-  const prevSavings = prevMb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
+  const prevOpening = prevMb[0]?.opening_balance ?? 0;
   const prevIncome  = prevTotals[0]?.income  ?? 0;
   const prevExpense = prevTotals[0]?.expense ?? 0;
-  const closing     = prevOpening + prevIncome - prevSavings - prevExpense;
+  const closing     = prevOpening + prevIncome - prevExpense;
   const rollover    = Math.max(0, closing);
 
   await setMonthBalance(m, y, rollover, cfg.monthly_savings ?? 0);
@@ -800,11 +967,10 @@ export async function transferLastMonthBalance(): Promise<{ amount: number; crea
   const cfg: Record<string, number> = {};
   for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
 
-  const prevOpening = prevMb[0]?.opening_balance      ?? 0;
-  const prevSavings = prevMb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
+  const prevOpening = prevMb[0]?.opening_balance ?? 0;
   const prevIncome  = prevTotals[0]?.income  ?? 0;
   const prevExpense = prevTotals[0]?.expense ?? 0;
-  const balance     = prevOpening + prevIncome - prevSavings - prevExpense;
+  const balance     = prevOpening + prevIncome - prevExpense;
   const amount      = Math.max(0, balance);
 
   if (amount <= 0) return { amount: 0, created: false };
@@ -848,6 +1014,10 @@ export async function getMonthHistory(pastMonths = 3, futureMonths = 12): Promis
   const now = new Date();
   const result = [];
 
+  const settingsRows = await db.getAllAsync<any>('SELECT key, value FROM settings');
+  const cfg: Record<string, number> = {};
+  for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
+
   // i > 0 → past, i = 0 → current, i < 0 → future
   for (let i = pastMonths; i >= -futureMonths; i--) {
     const d   = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -866,14 +1036,14 @@ export async function getMonthHistory(pastMonths = 3, futureMonths = 12): Promis
     ]);
 
     const opening = mb[0]?.opening_balance      ?? 0;
-    const savings = mb[0]?.savings_contribution ?? 0;
+    const savings = mb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
     const income  = totals[0]?.income  ?? 0;
     const expense = totals[0]?.expense ?? 0;
 
     result.push({
       label:   d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
       income, expense, savings, opening, month: m, year: y,
-      closing: opening + income - savings - expense,
+      closing: opening + income - expense,
     });
   }
   return result;
@@ -887,7 +1057,10 @@ export async function getDashboardDataForMonth(month: number, year: number): Pro
   const db  = await getDb();
   const key = `${year}-${String(month).padStart(2, '0')}`;
 
-  const [totals, mb, txs, cats] = await Promise.all([
+  // Ensure opening balance is computed and stored before fetching
+  const opening = await computeMonthOpening(month, year);
+
+  const [totals, mb, txs, cats, settingsRows] = await Promise.all([
     db.getAllAsync<any>(`
       SELECT
         COALESCE(SUM(CASE WHEN type='income'  THEN amount ELSE 0 END),0) AS income,
@@ -902,16 +1075,19 @@ export async function getDashboardDataForMonth(month: number, year: number): Pro
     db.getAllAsync<Category>(
       `SELECT * FROM categories WHERE is_recurring = 1 AND is_active = 1 AND default_amount > 0`
     ),
+    db.getAllAsync<any>('SELECT key, value FROM settings'),
   ]);
 
-  const opening = mb[0]?.opening_balance      ?? 0;
-  const savings = mb[0]?.savings_contribution ?? 0;
+  const cfg: Record<string, number> = {};
+  for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
+
+  const savings = mb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
   const income  = totals[0]?.income  ?? 0;
   const expense = totals[0]?.expense ?? 0;
 
   return {
     income, expense, opening, savings,
-    balance: opening + income - savings - expense,
+    balance: income - expense,          // just this month's net; opening shown separately
     transactions: txs,
     recurring: cats.map(c => ({
       name: c.name, icon: c.icon, color: c.color,
@@ -963,7 +1139,7 @@ export async function getMonthExpenseTotalsByDay(year: number, month: number): P
 export async function getTransactionsForDate(date: string): Promise<Transaction[]> {
   const db = await getDb();
   return db.getAllAsync<Transaction>(
-    `${TX_SELECT} WHERE t.date = ? AND t.type = 'expense' ORDER BY t.created_at DESC`,
+    `${TX_SELECT} WHERE t.date = ? AND t.type = 'expense' AND t.is_recurring = 0 ORDER BY t.created_at DESC`,
     [date]
   );
 }
