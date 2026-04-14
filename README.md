@@ -256,18 +256,14 @@ Install on device by transferring the `.apk` file and enabling **Install from un
 
 #### Re-building after code changes
 
+A single script handles sync → build → versioned copy:
+
 ```bash
-# Sync changes from Windows to WSL2
-rsync -av --exclude='node_modules' --exclude='.git' \
-  /mnt/d/Projekti/BudgetAppV2/ ~/BudgetAppV2/
-
-# Build
-cd ~/BudgetAppV2
-eas build -p android --profile preview --local
-
-# Copy APK back
-cp ~/BudgetAppV2/*.apk /mnt/d/Projekti/BudgetAppV2/
+bash /mnt/c/Users/Ivan/Projekti/BudgetAppV2/build.sh
 ```
+
+The APK is saved to `C:\Users\Ivan\OneDrive\Aplikacija test\BudgetApp_V{X.Y}.apk`.
+Version increments automatically on each run (1.0 → 1.1 → 1.2 …).
 
 #### Gradle performance (optional)
 
