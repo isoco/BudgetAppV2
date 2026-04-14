@@ -77,15 +77,24 @@ sed -i '/^export JAVA_HOME=.*jdk/d' "$GRADLEW"
 sed -i "1a export JAVA_HOME=\"$JAVA_HOME\"" "$GRADLEW"
 echo "▶ Patched gradlew with JAVA_HOME=$JAVA_HOME"
 
+# Write sdk.dir to local.properties so Gradle can find the SDK
+echo "sdk.dir=$ANDROID_HOME" > "$WSL_DST/apps/mobile/android/local.properties"
+echo "▶ Wrote sdk.dir=$ANDROID_HOME to local.properties"
+
 # Also write to eas.json env so EAS passes it through
 EAS_JSON="$WSL_DST/apps/mobile/eas.json"
 node -e "
   const fs = require('fs');
   const cfg = JSON.parse(fs.readFileSync('$EAS_JSON','utf8'));
-  cfg.build.preview.env = { ...cfg.build.preview.env, JAVA_HOME: '$JAVA_HOME' };
+  cfg.build.preview.env = {
+    ...cfg.build.preview.env,
+    JAVA_HOME: '$JAVA_HOME',
+    ANDROID_HOME: '$ANDROID_HOME',
+    ANDROID_SDK_ROOT: '$ANDROID_HOME'
+  };
   fs.writeFileSync('$EAS_JSON', JSON.stringify(cfg, null, 2));
 "
-echo "▶ Injected JAVA_HOME into eas.json preview env"
+echo "▶ Injected JAVA_HOME + ANDROID_HOME into eas.json preview env"
 
 # ─── 3. Build ─────────────────────────────────────────────────────────────────
 echo "▶ Building APK (this may take a few minutes)..."

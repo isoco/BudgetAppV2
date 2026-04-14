@@ -16,7 +16,9 @@
       "extends": "base",
       "distribution": "internal",
       "env": {
-        "JAVA_HOME": "/home/isoco/.jdk17"
+        "JAVA_HOME": "/home/isoco/.jdk17",
+        "ANDROID_HOME": "/home/isoco/android-sdk",
+        "ANDROID_SDK_ROOT": "/home/isoco/android-sdk"
       }
     },
     "production": {
