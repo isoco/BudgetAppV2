@@ -13,7 +13,8 @@
       "mcp__ide__getDiagnostics",
       "Bash(sed:*)",
       "Bash(grep:*)",
-      "Bash(rm _tmp_4383_f8abd68eaf90078ae75f20e1c01dba7f:*)"
+      "Bash(rm _tmp_4383_f8abd68eaf90078ae75f20e1c01dba7f:*)",
+      "Bash(find:*)"
     ]
   }
 }

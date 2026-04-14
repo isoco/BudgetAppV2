@@ -157,6 +157,8 @@ export async function deleteTransaction(id: string): Promise<void> {
 export async function deleteAllRecurringByCategory(categoryId: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM transactions WHERE category_id = ? AND is_recurring = 1', [categoryId]);
+  // Prevent autoPopulateRecurring from re-creating these transactions
+  await db.runAsync('UPDATE categories SET is_recurring = 0, default_amount = 0 WHERE id = ?', [categoryId]);
 }
 
 export async function markTransactionPaid(id: string, paid_date: string | null): Promise<void> {
