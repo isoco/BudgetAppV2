@@ -120,7 +120,7 @@ export default function MonthDashboardScreen() {
 
           {/* Summary card — balance = income - expense (savings separate) */}
           <View style={[s.summaryCard, { backgroundColor: staticColors.primary + '18' }]}>
-            <SummaryChip label="Income"   value={fmt((data?.income ?? 0) + (data?.opening ?? 0))}  color={staticColors.success} />
+            <SummaryChip label="Income"   value={fmt(data?.income ?? 0)}  color={staticColors.success} />
             <View style={[s.vDivider, { backgroundColor: colors.border }]} />
             <SummaryChip label="Expenses" value={fmt(data?.expense ?? 0)} color={staticColors.danger} />
             <View style={[s.vDivider, { backgroundColor: colors.border }]} />
@@ -163,14 +163,25 @@ export default function MonthDashboardScreen() {
             </View>
           </View>
 
-          {/* Leftover from previous month */}
-          {(data?.opening ?? 0) > 0 && (
-            <Section label="Leftover from previous month" color={staticColors.primary}>
+          {/* Carryover from previous month (positive or negative) */}
+          {(data?.opening ?? 0) !== 0 && (
+            <Section
+              label="Carried over from previous month"
+              color={(data?.opening ?? 0) >= 0 ? staticColors.primary : staticColors.danger}
+            >
               <View style={[s.txRow, { borderColor: colors.border }]}>
-                <View style={[s.dot, { backgroundColor: staticColors.primary }]} />
-                <Ionicons name="return-down-forward" size={14} color={staticColors.primary} />
-                <Text style={[s.txName, { color: colors.text, flex: 1 }]}>Carried over</Text>
-                <Text style={[s.txAmt, { color: staticColors.primary }]}>+{fmt(data!.opening)}</Text>
+                <View style={[s.dot, { backgroundColor: (data?.opening ?? 0) >= 0 ? staticColors.primary : staticColors.danger }]} />
+                <Ionicons
+                  name={(data?.opening ?? 0) >= 0 ? 'return-down-forward' : 'warning-outline'}
+                  size={14}
+                  color={(data?.opening ?? 0) >= 0 ? staticColors.primary : staticColors.danger}
+                />
+                <Text style={[s.txName, { color: colors.text, flex: 1 }]}>
+                  {(data?.opening ?? 0) >= 0 ? 'Leftover' : 'Debt carried in'}
+                </Text>
+                <Text style={[s.txAmt, { color: (data?.opening ?? 0) >= 0 ? staticColors.primary : staticColors.danger }]}>
+                  {(data?.opening ?? 0) >= 0 ? '+' : '-'}{fmt(data!.opening)}
+                </Text>
               </View>
             </Section>
           )}

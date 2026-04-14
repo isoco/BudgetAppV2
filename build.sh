@@ -3,7 +3,48 @@ set -e
 
 # ─── Environment ─────────────────────────────────────────────────────────────
 export ANDROID_HOME="$HOME/Android/Sdk"
-export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
+
+# Detect JAVA_HOME — try SDKMAN first (no sudo), then common system paths
+if [[ -z "$JAVA_HOME" ]] || [[ ! -d "$JAVA_HOME" ]]; then
+  # SDKMAN current Java (no sudo required)
+  if [[ -f "$HOME/.sdkman/bin/sdkman-init.sh" ]]; then
+    source "$HOME/.sdkman/bin/sdkman-init.sh"
+    _sdkjava=$(sdk home java 2>/dev/null || true)
+    [[ -d "$_sdkjava" ]] && export JAVA_HOME="$_sdkjava"
+  fi
+fi
+
+if [[ -z "$JAVA_HOME" ]] || [[ ! -d "$JAVA_HOME" ]]; then
+  for candidate in \
+    "$HOME/.jdk17" \
+    /usr/lib/jvm/java-17-openjdk-amd64 \
+    /usr/lib/jvm/java-17-openjdk \
+    /usr/lib/jvm/java-17 \
+    /usr/lib/jvm/temurin-17 \
+    /usr/local/lib/jvm/openjdk17 \
+    /opt/java/17; do
+    if [[ -d "$candidate" ]]; then
+      export JAVA_HOME="$candidate"
+      break
+    fi
+  done
+fi
+
+# Last resort: derive from the java binary on PATH
+if [[ -z "$JAVA_HOME" ]] || [[ ! -d "$JAVA_HOME" ]]; then
+  _java=$(command -v java 2>/dev/null)
+  if [[ -n "$_java" ]]; then
+    export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$_java")")")"
+  fi
+fi
+
+if [[ -z "$JAVA_HOME" ]] || [[ ! -d "$JAVA_HOME" ]]; then
+  echo "✗ Could not find a valid Java 17 installation."
+  echo "  Install it with: sudo apt-get install -y openjdk-17-jdk"
+  exit 1
+fi
+
+echo "▶ Using JAVA_HOME=$JAVA_HOME"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$JAVA_HOME/bin:$PATH"
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
@@ -44,6 +85,13 @@ rsync -a --delete \
 echo "▶ Installing dependencies..."
 cd "$WSL_DST"
 pnpm install --frozen-lockfile --silent
+
+# ─── 2b. Inject Java path into gradle.properties (bypasses EAS env isolation) ─
+GRADLE_PROPS="$WSL_DST/apps/mobile/android/gradle.properties"
+# Remove any previous injection, then append current JAVA_HOME
+sed -i '/^org\.gradle\.java\.home=/d' "$GRADLE_PROPS"
+echo "org.gradle.java.home=$JAVA_HOME" >> "$GRADLE_PROPS"
+echo "▶ Gradle java.home set to $JAVA_HOME"
 
 # ─── 3. Build ─────────────────────────────────────────────────────────────────
 echo "▶ Building APK (this may take a few minutes)..."
