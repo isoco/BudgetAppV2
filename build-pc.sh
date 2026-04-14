@@ -52,7 +52,7 @@ echo "▶ Using JAVA_HOME=$JAVA_HOME"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$JAVA_HOME/bin:$PATH"
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
-WIN_SRC="/mnt/d/Projekti/BudgetAppV2"
+WIN_SRC="/mnt/c/Users/Ivan/Projekti/BudgetAppV2"
 WSL_DST="$HOME/BudgetAppV2"
 OUTPUT_DIR="/mnt/c/Users/Ivan/OneDrive/Aplikacija test"
 VERSION_FILE="$OUTPUT_DIR/.version"
