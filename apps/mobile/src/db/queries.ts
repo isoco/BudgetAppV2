@@ -605,6 +605,9 @@ export async function computeMonthOpening(month: number, year: number): Promise<
 export async function cascadeOpeningBalances(month: number, year: number, forwardMonths = 15): Promise<void> {
   const db = await getDb();
 
+  // Remove legacy "Last Month Balance" transfer transactions — they double-count carryover
+  await db.runAsync(`DELETE FROM transactions WHERE note = 'Last Month Balance'`);
+
   // Find earliest month with any transaction data
   const earliest = await db.getAllAsync<{ ym: string | null }>(
     `SELECT strftime('%Y-%m', MIN(date)) AS ym FROM transactions`
@@ -657,10 +660,11 @@ export async function cascadeOpeningBalances(month: number, year: number, forwar
     );
 
     // Read this month's transactions to compute NEXT month's opening
+    // Exclude legacy "Last Month Balance" transfer transactions to avoid double-counting
     const totals = await db.getAllAsync<any>(
       `SELECT COALESCE(SUM(CASE WHEN type='income'  THEN amount ELSE 0 END),0) AS income,
               COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense
-       FROM transactions WHERE strftime('%Y-%m', date) = ?`, [key]
+       FROM transactions WHERE strftime('%Y-%m', date) = ? AND (note != 'Last Month Balance' OR note IS NULL)`, [key]
     );
     const income  = totals[0]?.income  ?? 0;
     const expense = totals[0]?.expense ?? 0;
@@ -1087,7 +1091,7 @@ export async function getDashboardDataForMonth(month: number, year: number): Pro
 
   return {
     income, expense, opening, savings,
-    balance: income - expense,          // just this month's net; opening shown separately
+    balance: opening + income - expense, // carryover counts as income
     transactions: txs,
     recurring: cats.map(c => ({
       name: c.name, icon: c.icon, color: c.color,

@@ -8,7 +8,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import {
-  getDashboardData, getSettings, rolloverFromPreviousMonth,
+  getDashboardData, getSettings,
   getUpcomingBills, getUpcomingIncome, getEndOfMonthProjection,
   autoPopulateRecurring, getSavingsSummary, UpcomingItem,
   getDailySpends, createDailySpend, deleteDailySpend, DailySpend,
@@ -64,9 +64,6 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
-    getSettings().then(s => {
-      if (s.auto_rollover) rolloverFromPreviousMonth().then(refetch);
-    });
     loadDaySpends(todayStr());
   }, []);
 

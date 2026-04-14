@@ -101,7 +101,7 @@ export default function MonthDashboardScreen() {
 
           {/* Summary card — balance = income - expense (savings separate) */}
           <View style={[s.summaryCard, { backgroundColor: staticColors.primary + '18' }]}>
-            <SummaryChip label="Income"   value={fmt(data?.income ?? 0)}  color={staticColors.success} />
+            <SummaryChip label="Income"   value={fmt((data?.income ?? 0) + (data?.opening ?? 0))}  color={staticColors.success} />
             <View style={[s.vDivider, { backgroundColor: colors.border }]} />
             <SummaryChip label="Expenses" value={fmt(data?.expense ?? 0)} color={staticColors.danger} />
             <View style={[s.vDivider, { backgroundColor: colors.border }]} />
