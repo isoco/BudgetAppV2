@@ -86,12 +86,12 @@ echo "▶ Installing dependencies..."
 cd "$WSL_DST"
 pnpm install --frozen-lockfile --silent
 
-# ─── 2b. Inject Java path into gradle.properties (bypasses EAS env isolation) ─
-GRADLE_PROPS="$WSL_DST/apps/mobile/android/gradle.properties"
-# Remove any previous injection, then append current JAVA_HOME
-sed -i '/^org\.gradle\.java\.home=/d' "$GRADLE_PROPS"
-echo "org.gradle.java.home=$JAVA_HOME" >> "$GRADLE_PROPS"
-echo "▶ Gradle java.home set to $JAVA_HOME"
+# ─── 2b. Patch gradlew to hardcode JAVA_HOME (EAS resets env in subprocess) ───
+GRADLEW="$WSL_DST/apps/mobile/android/gradlew"
+# Remove any previous patch line, then insert after shebang (line 1)
+sed -i '/^export JAVA_HOME=.*jdk/d' "$GRADLEW"
+sed -i "1a export JAVA_HOME=\"$JAVA_HOME\"" "$GRADLEW"
+echo "▶ Patched gradlew with JAVA_HOME=$JAVA_HOME"
 
 # ─── 3. Build ─────────────────────────────────────────────────────────────────
 echo "▶ Building APK (this may take a few minutes)..."
