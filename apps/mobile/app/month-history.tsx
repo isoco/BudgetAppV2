@@ -103,16 +103,20 @@ export default function MonthHistoryScreen() {
                   </View>
                 )}
 
-                {hasData && (
-                  <View style={[s.track, { backgroundColor: colors.surfaceHigh }]}>
-                    {item.income > 0 && (
-                      <View style={[s.bar, {
-                        width: `${Math.min(100, ((item.expense + item.savings) / item.income) * 100)}%` as any,
-                        backgroundColor: staticColors.danger,
-                      }]} />
-                    )}
-                  </View>
-                )}
+                {hasData && (() => {
+                  const total = item.opening + item.income;
+                  if (total <= 0) return null;
+                  const openPct   = Math.min(100, (item.opening  / total) * 100);
+                  const expPct    = Math.min(100 - openPct, (item.expense / total) * 100);
+                  const savPct    = Math.min(100 - openPct - expPct, (item.savings / total) * 100);
+                  return (
+                    <View style={[s.track, { backgroundColor: colors.surfaceHigh }]}>
+                      {openPct > 0 && <View style={[s.bar, { width: `${openPct}%` as any, backgroundColor: staticColors.primary }]} />}
+                      {expPct  > 0 && <View style={[s.bar, { width: `${expPct}%`  as any, backgroundColor: staticColors.danger  }]} />}
+                      {savPct  > 0 && <View style={[s.bar, { width: `${savPct}%`  as any, backgroundColor: staticColors.warning }]} />}
+                    </View>
+                  );
+                })()}
               </TouchableOpacity>
             </View>
           );
@@ -146,7 +150,7 @@ const s = StyleSheet.create({
   badge:        { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full },
   badgeText:    { ...typography.sm, fontWeight: '700' },
   rows:         { marginBottom: spacing.sm },
-  track:        { height: 6, borderRadius: radius.full, overflow: 'hidden' },
+  track:        { height: 6, borderRadius: radius.full, overflow: 'hidden', flexDirection: 'row' },
   bar:          { height: '100%', borderRadius: radius.full },
   empty:        { ...typography.base, textAlign: 'center', marginTop: spacing.xl },
 });

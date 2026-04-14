@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Alert, TextInput, Modal, FlatList, ActivityIndicator,
+  Alert, TextInput, Modal, ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,7 @@ import { format } from 'date-fns';
 import { useTheme } from '../src/theme/useTheme';
 import {
   getDailyTracking, initDailyTracking, upsertDailyEntry, getSettings, DailyEntry,
-  getMonthExpenseTotalsByDay, getTransactionsForDate, createTransaction, Transaction,
+  getMonthExpenseTotalsByDay, createTransaction,
   getCategories, Category,
 } from '../src/db/queries';
 
@@ -29,7 +29,6 @@ export default function DailyTrackerScreen() {
   // Day modal
   const [modalVisible, setModalVisible] = useState(false);
   const [modalDay, setModalDay]         = useState<DailyEntry | null>(null);
-  const [modalTxs, setModalTxs]         = useState<Transaction[]>([]);
   const [editAllowed, setEditAllowed]   = useState('');
   // Inline add expense
   const [addAmount, setAddAmount]       = useState('');
@@ -64,11 +63,8 @@ export default function DailyTrackerScreen() {
     else setMonth(m => m + 1);
   }
 
-  async function openDay(entry: DailyEntry) {
-    const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(entry.day).padStart(2,'0')}`;
-    const txs = await getTransactionsForDate(dateStr);
+  function openDay(entry: DailyEntry) {
     setModalDay(entry);
-    setModalTxs(txs);
     setEditAllowed(String(entry.allowed_amount));
     setAddAmount('');
     setAddNote('');
@@ -81,7 +77,7 @@ export default function DailyTrackerScreen() {
     await upsertDailyEntry({
       year, month, day: modalDay.day,
       allowed_amount: parseFloat(editAllowed) || defaultAllowed,
-      spent_amount: txTotals[modalDay.day] ?? 0,
+      spent_amount: modalDay.spent_amount,
       notes: null,
     });
     load();
@@ -101,15 +97,23 @@ export default function DailyTrackerScreen() {
         category_id: addCatId,
         note: addNote || null,
       });
+      const newSpent = modalDay.spent_amount + num;
+      await upsertDailyEntry({
+        year, month, day: modalDay.day,
+        allowed_amount: parseFloat(editAllowed) || defaultAllowed,
+        spent_amount: newSpent,
+        notes: null,
+      });
+      setModalDay(prev => prev ? { ...prev, spent_amount: newSpent } : prev);
       setAddAmount('');
       setAddNote('');
       setAddCatId(null);
-      const [txs, totals] = await Promise.all([
-        getTransactionsForDate(dateStr),
+      const [totals, data] = await Promise.all([
         getMonthExpenseTotalsByDay(year, month),
+        getDailyTracking(year, month),
       ]);
-      setModalTxs(txs);
       setTxTotals(totals);
+      setEntries(data);
     } finally {
       setSaving(false);
     }
@@ -134,7 +138,7 @@ export default function DailyTrackerScreen() {
   const modalDateStr = modalDay
     ? `${year}-${String(month).padStart(2,'0')}-${String(modalDay.day).padStart(2,'0')}`
     : '';
-  const modalSpentTotal = modalDay ? (txTotals[modalDay.day] ?? 0) : 0;
+  const modalSpentTotal = modalDay ? modalDay.spent_amount : 0;
   const modalAllowed    = parseFloat(editAllowed) || defaultAllowed;
 
   return (
@@ -166,7 +170,7 @@ export default function DailyTrackerScreen() {
           {cells.map((day, idx) => {
             if (day === null) return <View key={`e${idx}`} style={s.emptyCell} />;
             const entry     = entryMap[day];
-            const spent     = txTotals[day] ?? 0;
+            const spent     = entry?.spent_amount ?? 0;
             const allowed   = entry?.allowed_amount ?? defaultAllowed;
             const isToday   = day === today;
             const isOver    = spent > 0 && spent > allowed;
@@ -231,30 +235,6 @@ export default function DailyTrackerScreen() {
                 Spent €{modalSpentTotal.toFixed(2)}
               </Text>
             </View>
-
-            {/* Transactions list */}
-            <Text style={s.sectionLabel}>Expenses</Text>
-            {modalTxs.length === 0 ? (
-              <Text style={s.emptyTx}>No expenses recorded</Text>
-            ) : (
-              <FlatList
-                data={modalTxs}
-                keyExtractor={t => t.id}
-                style={{ maxHeight: 180 }}
-                renderItem={({ item }) => (
-                  <View style={s.txRow}>
-                    {item.category_color ? (
-                      <View style={[s.txDot, { backgroundColor: item.category_color }]} />
-                    ) : null}
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.txName}>{item.category_name ?? 'Uncategorized'}</Text>
-                      {item.note ? <Text style={s.txNote}>{item.note}</Text> : null}
-                    </View>
-                    <Text style={[s.txAmount, { color: colors.danger }]}>€{item.amount.toFixed(2)}</Text>
-                  </View>
-                )}
-              />
-            )}
 
             {/* Add expense inline */}
             <Text style={s.sectionLabel}>Add Expense</Text>
@@ -342,12 +322,6 @@ function makeStyles(colors: any, spacing: any, radius: any) {
     budgetInput:   { width: 64, fontSize: 15, color: colors.text, fontWeight: '700', textAlign: 'center', borderBottomWidth: 1, borderColor: colors.border },
     budgetStatus:  { fontSize: 13, fontWeight: '600', marginLeft: 'auto' as any },
     sectionLabel:  { fontSize: 11, color: colors.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: spacing.xs, marginTop: spacing.sm },
-    emptyTx:       { fontSize: 13, color: colors.textSubtle, marginBottom: spacing.sm },
-    txRow:         { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 6, borderBottomWidth: 1, borderColor: colors.border },
-    txDot:         { width: 8, height: 8, borderRadius: 4 },
-    txName:        { fontSize: 14, color: colors.text, fontWeight: '500' },
-    txNote:        { fontSize: 11, color: colors.textSubtle },
-    txAmount:      { fontSize: 14, fontWeight: '700' },
     addRow:        { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
     addAmountInput:{ flex: 1, backgroundColor: colors.surfaceHigh, borderRadius: radius.md, padding: spacing.sm, color: colors.text, fontSize: 15 },
     catScroll:     { marginBottom: spacing.sm },
