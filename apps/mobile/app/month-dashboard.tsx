@@ -1,12 +1,12 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput,
+  ActivityIndicator, Alert, TextInput, Modal,
 } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  getDashboardDataForMonth, Transaction, deleteTransaction,
+  getDashboardDataForMonth, Transaction, deleteTransaction, deleteAllRecurringByCategory,
   autoPopulateRecurring, cascadeOpeningBalances, updateMonthlySavings,
 } from '../src/db/queries';
 import { useTheme } from '../src/theme/useTheme';
@@ -30,6 +30,7 @@ export default function MonthDashboardScreen() {
   const [loading, setLoading]       = useState(true);
   const [editingSavings, setEditingSavings] = useState(false);
   const [savingsInput, setSavingsInput]     = useState('');
+  const [selectedTx, setSelectedTx]         = useState<Transaction | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,14 +59,32 @@ export default function MonthDashboardScreen() {
     router.push(defaultDate ? `/add-transaction?defaultDate=${defaultDate}` : '/add-transaction');
   }
 
-  async function handleDelete(id: string) {
-    Alert.alert('Delete transaction', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        await deleteTransaction(id);
-        load();
-      }},
-    ]);
+  async function handleDelete(tx: Transaction) {
+    if (tx.is_recurring) {
+      Alert.alert('Delete Recurring', 'Delete just this occurrence or all occurrences?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'This Only', onPress: async () => {
+          await deleteTransaction(tx.id);
+          setSelectedTx(null);
+          load();
+        }},
+        { text: 'All Occurrences', style: 'destructive', onPress: async () => {
+          if (tx.category_id) await deleteAllRecurringByCategory(tx.category_id);
+          else await deleteTransaction(tx.id);
+          setSelectedTx(null);
+          load();
+        }},
+      ]);
+    } else {
+      Alert.alert('Delete transaction', 'Are you sure?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: async () => {
+          await deleteTransaction(tx.id);
+          setSelectedTx(null);
+          load();
+        }},
+      ]);
+    }
   }
 
   async function saveSavings() {
@@ -107,7 +126,7 @@ export default function MonthDashboardScreen() {
             <View style={[s.vDivider, { backgroundColor: colors.border }]} />
             <SummaryChip
               label="Balance"
-              value={fmt(data?.balance ?? 0)}
+              value={`${(data?.balance ?? 0) < 0 ? '-' : ''}${fmt(data?.balance ?? 0)}`}
               color={(data?.balance ?? 0) >= 0 ? staticColors.success : staticColors.danger}
             />
           </View>
@@ -184,7 +203,7 @@ export default function MonthDashboardScreen() {
           {incomeTxs.length > 0 && (
             <Section label={`Income (${incomeTxs.length})`} color={staticColors.success}>
               {incomeTxs.map(t => (
-                <TxRow key={t.id} tx={t} sign="+" color={staticColors.success} colors={colors} onDelete={handleDelete} />
+                <TxRow key={t.id} tx={t} sign="+" color={staticColors.success} colors={colors} onDelete={handleDelete} onPress={setSelectedTx} />
               ))}
             </Section>
           )}
@@ -193,7 +212,7 @@ export default function MonthDashboardScreen() {
           {expenseTxs.length > 0 && (
             <Section label={`Expenses (${expenseTxs.length})`} color={staticColors.danger}>
               {expenseTxs.map(t => (
-                <TxRow key={t.id} tx={t} sign="-" color={staticColors.danger} colors={colors} onDelete={handleDelete} />
+                <TxRow key={t.id} tx={t} sign="-" color={staticColors.danger} colors={colors} onDelete={handleDelete} onPress={setSelectedTx} />
               ))}
             </Section>
           )}
@@ -210,6 +229,36 @@ export default function MonthDashboardScreen() {
       <TouchableOpacity style={[s.fab, { backgroundColor: staticColors.primary }]} onPress={handleAdd}>
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
+
+      <Modal visible={!!selectedTx} transparent animationType="slide" onRequestClose={() => setSelectedTx(null)}>
+        <TouchableOpacity style={s.modalOverlay} activeOpacity={1} onPress={() => setSelectedTx(null)}>
+          <TouchableOpacity activeOpacity={1} style={[s.modalSheet, { backgroundColor: colors.surface }]}>
+            {selectedTx && (
+              <>
+                <View style={s.modalHandle} />
+                <Text style={[s.modalTitle, { color: colors.text }]}>Transaction Details</Text>
+                <TxDetailRow label="Category"  value={selectedTx.category_name ?? '—'}    colors={colors} />
+                <TxDetailRow label="Amount"    value={`${selectedTx.type === 'income' ? '+' : '-'}€${selectedTx.amount.toFixed(2)}`} colors={colors} />
+                <TxDetailRow label="Type"      value={selectedTx.type}                     colors={colors} />
+                <TxDetailRow label="Date"      value={selectedTx.date}                     colors={colors} />
+                {selectedTx.merchant && <TxDetailRow label="Merchant" value={selectedTx.merchant} colors={colors} />}
+                {selectedTx.note     && <TxDetailRow label="Note"     value={selectedTx.note}     colors={colors} />}
+                <TxDetailRow label="Recurring" value={selectedTx.is_recurring ? 'Yes 🔁' : 'No'} colors={colors} />
+                {selectedTx.paid_date && <TxDetailRow label="Paid on" value={selectedTx.paid_date} colors={colors} />}
+                <View style={s.modalActions}>
+                  <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.danger }]} onPress={() => handleDelete(selectedTx)}>
+                    <Ionicons name="trash-outline" size={16} color={staticColors.danger} />
+                    <Text style={[s.modalBtnText, { color: staticColors.danger }]}>Delete</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.modalBtn, { borderColor: colors.border }]} onPress={() => setSelectedTx(null)}>
+                    <Text style={[s.modalBtnText, { color: colors.text }]}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -232,14 +281,25 @@ function Section({ label, color, children }: { label: string; color: string; chi
   );
 }
 
-function TxRow({ tx, sign, color, colors, onDelete }: {
+function TxDetailRow({ label, value, colors }: { label: string; value: string; colors: any }) {
+  return (
+    <View style={s.detailRow}>
+      <Text style={[s.detailLabel, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[s.detailValue, { color: colors.text }]}>{value}</Text>
+    </View>
+  );
+}
+
+function TxRow({ tx, sign, color, colors, onDelete, onPress }: {
   tx: Transaction; sign: string; color: string; colors: any;
-  onDelete: (id: string) => void;
+  onDelete: (tx: Transaction) => void;
+  onPress: (tx: Transaction) => void;
 }) {
   return (
     <TouchableOpacity
       style={[s.txRow, { borderColor: colors.border }]}
-      onLongPress={() => onDelete(tx.id)}
+      onPress={() => onPress(tx)}
+      onLongPress={() => onDelete(tx)}
       delayLongPress={400}
     >
       {tx.category_color && <View style={[s.dot, { backgroundColor: tx.category_color }]} />}
@@ -279,4 +339,14 @@ const s = StyleSheet.create({
   txSub:        { fontSize: 11, marginTop: 1 },
   txAmt:        { fontSize: 14, fontWeight: '700' },
   empty:        { textAlign: 'center', marginTop: spacing.xl, ...typography.base },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet:   { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: 40 },
+  modalHandle:  { width: 40, height: 4, borderRadius: 2, backgroundColor: '#555', alignSelf: 'center', marginBottom: spacing.md },
+  modalTitle:   { ...typography.lg, fontWeight: '700', marginBottom: spacing.md },
+  detailRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#333' },
+  detailLabel:  { fontSize: 13 },
+  detailValue:  { fontSize: 13, fontWeight: '500', flex: 1, textAlign: 'right' },
+  modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  modalBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: spacing.sm, borderRadius: radius.md, borderWidth: 1 },
+  modalBtnText: { fontSize: 13, fontWeight: '600' },
 });

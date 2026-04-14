@@ -167,8 +167,10 @@ export default function DashboardScreen() {
 
       {/* Balance Card — tappable */}
       <TouchableOpacity style={s.balanceCard} onPress={openBalanceModal} activeOpacity={0.85}>
-        {(data?.opening_balance ?? 0) > 0 && (
-          <Text style={s.rolloverLabel}>↩ {fmt(data!.opening_balance)} leftover from {data?.rollover_from_month ?? ''}</Text>
+        {(data?.opening_balance ?? 0) !== 0 && (
+          <Text style={s.rolloverLabel}>
+            {(data!.opening_balance) >= 0 ? '↩' : '⚠'} {sign(data!.opening_balance)}{fmt(data!.opening_balance)} {(data!.opening_balance) >= 0 ? 'leftover' : 'debt'} from {data?.rollover_from_month ?? ''}
+          </Text>
         )}
         <Text style={s.balanceLabel}>Available Balance  <Text style={{ fontSize: 11, opacity: 0.6 }}>tap for details</Text></Text>
         <Text style={[s.balanceAmount, (data?.available ?? 0) < 0 && { color: '#fca5a5' }]}>
@@ -179,7 +181,7 @@ export default function DashboardScreen() {
           <View style={s.statDivider} />
           <StatChip icon="arrow-up-circle"   label="Expenses" value={fmt(data?.expense?.this_month ?? 0)} color={staticColors.danger} />
           <View style={s.statDivider} />
-          <StatChip icon="trending-up" label="Net" value={fmt(data?.balance ?? 0)} color={(data?.balance ?? 0) >= 0 ? staticColors.success : staticColors.danger} />
+          <StatChip icon="trending-up" label="Net" value={`${sign(data?.balance ?? 0)}${fmt(data?.balance ?? 0)}`} color={(data?.balance ?? 0) >= 0 ? staticColors.success : staticColors.danger} />
         </View>
       </TouchableOpacity>
 

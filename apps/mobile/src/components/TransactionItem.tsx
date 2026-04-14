@@ -11,20 +11,28 @@ interface Props {
     date: string;
     note: string | null;
     merchant: string | null;
+    is_recurring?: number;
     category_name?: string;
     category_icon?: string;
     category_color?: string;
   };
   onDelete?: () => void;
+  onPress?: () => void;
+  onLongPress?: () => void;
 }
 
-export function TransactionItem({ transaction: tx, onDelete }: Props) {
+export function TransactionItem({ transaction: tx, onDelete, onPress, onLongPress }: Props) {
   const isIncome = tx.type === 'income';
   const label    = tx.merchant || tx.note || tx.category_name || 'Transaction';
   const color    = tx.category_color || colors.dark.textSubtle;
 
   return (
-    <View style={s.container}>
+    <TouchableOpacity
+      style={s.container}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      activeOpacity={onPress ? 0.7 : 1}
+    >
       <View style={[s.icon, { backgroundColor: color + '22' }]}>
         <Text style={s.emoji}>{iconToEmoji(tx.category_icon ?? '')}</Text>
       </View>
@@ -33,6 +41,7 @@ export function TransactionItem({ transaction: tx, onDelete }: Props) {
         <Text style={s.meta}>
           {tx.category_name && `${tx.category_name} · `}
           {format(new Date(tx.date), 'MMM d')}
+          {tx.is_recurring === 1 && ' · 🔁'}
         </Text>
       </View>
       <View style={s.right}>
@@ -45,7 +54,7 @@ export function TransactionItem({ transaction: tx, onDelete }: Props) {
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

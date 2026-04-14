@@ -1,10 +1,10 @@
 ﻿import { useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, ScrollView } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { getTransactions, deleteTransaction, markTransactionPaid, cascadeOpeningBalances, Transaction } from '../../src/db/queries';
+import { getTransactions, deleteTransaction, deleteAllRecurringByCategory, markTransactionPaid, cascadeOpeningBalances, Transaction } from '../../src/db/queries';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
 import { TransactionItem } from '../../src/components/TransactionItem';
@@ -28,6 +28,7 @@ export default function TransactionsScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading]           = useState(true);
   const [filter, setFilter]             = useState<Filter>('all');
+  const [selectedTx, setSelectedTx]     = useState<Transaction | null>(null);
   const now = new Date();
 
   const load = useCallback(async () => {
@@ -44,19 +45,36 @@ export default function TransactionsScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  async function handleDelete(id: string) {
-    Alert.alert('Delete', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        const tx = transactions.find(t => t.id === id);
-        await deleteTransaction(id);
-        if (tx) {
-          const [y, m] = tx.date.split('-').map(Number);
+  async function handleDelete(tx: Transaction) {
+    const [y, m] = tx.date.split('-').map(Number);
+    if (tx.is_recurring) {
+      Alert.alert('Delete Recurring', 'Delete just this occurrence or all occurrences?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'This Only', onPress: async () => {
+          await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
-        }
-        setTransactions(prev => prev.filter(t => t.id !== id));
-      }},
-    ]);
+          setTransactions(prev => prev.filter(t => t.id !== tx.id));
+          setSelectedTx(null);
+        }},
+        { text: 'All Occurrences', style: 'destructive', onPress: async () => {
+          if (tx.category_id) await deleteAllRecurringByCategory(tx.category_id);
+          else await deleteTransaction(tx.id);
+          await cascadeOpeningBalances(m, y);
+          setSelectedTx(null);
+          load();
+        }},
+      ]);
+    } else {
+      Alert.alert('Delete', 'This cannot be undone.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: async () => {
+          await deleteTransaction(tx.id);
+          await cascadeOpeningBalances(m, y);
+          setTransactions(prev => prev.filter(t => t.id !== tx.id));
+          setSelectedTx(null);
+        }},
+      ]);
+    }
   }
 
   const listData: ListItem[] = filter === 'expense'
@@ -108,7 +126,8 @@ export default function TransactionsScreen() {
             <View>
               <TransactionItem
                 transaction={item.tx}
-                onDelete={() => handleDelete(item.tx.id)}
+                onPress={() => setSelectedTx(item.tx)}
+                onDelete={() => handleDelete(item.tx)}
                 onLongPress={async () => {
                   const newPaidDate = item.tx.paid_date ? null : new Date().toISOString().split('T')[0];
                   await markTransactionPaid(item.tx.id, newPaidDate);
@@ -131,6 +150,45 @@ export default function TransactionsScreen() {
       <TouchableOpacity style={s.fab} onPress={() => router.push('/add-transaction')}>
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
+
+      <Modal visible={!!selectedTx} transparent animationType="slide" onRequestClose={() => setSelectedTx(null)}>
+        <TouchableOpacity style={s.modalOverlay} activeOpacity={1} onPress={() => setSelectedTx(null)}>
+          <TouchableOpacity activeOpacity={1} style={[s.modalSheet, { backgroundColor: colors.card }]}>
+            {selectedTx && (
+              <>
+                <View style={s.modalHandle} />
+                <Text style={[s.modalTitle, { color: colors.text }]}>Transaction Details</Text>
+                <DetailRow label="Category"  value={selectedTx.category_name ?? '—'}    colors={colors} />
+                <DetailRow label="Amount"    value={`${selectedTx.type === 'income' ? '+' : '-'}€${selectedTx.amount.toFixed(2)}`} colors={colors} />
+                <DetailRow label="Type"      value={selectedTx.type}                     colors={colors} />
+                <DetailRow label="Date"      value={selectedTx.date}                     colors={colors} />
+                {selectedTx.merchant && <DetailRow label="Merchant" value={selectedTx.merchant} colors={colors} />}
+                {selectedTx.note     && <DetailRow label="Note"     value={selectedTx.note}     colors={colors} />}
+                <DetailRow label="Recurring" value={selectedTx.is_recurring ? 'Yes 🔁' : 'No'} colors={colors} />
+                {selectedTx.paid_date && <DetailRow label="Paid on" value={selectedTx.paid_date} colors={colors} />}
+                <View style={s.modalActions}>
+                  <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.danger }]} onPress={() => handleDelete(selectedTx)}>
+                    <Ionicons name="trash-outline" size={16} color={staticColors.danger} />
+                    <Text style={[s.modalBtnText, { color: staticColors.danger }]}>Delete</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.modalBtn, { borderColor: colors.border }]} onPress={() => setSelectedTx(null)}>
+                    <Text style={[s.modalBtnText, { color: colors.text }]}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+}
+
+function DetailRow({ label, value, colors }: { label: string; value: string; colors: any }) {
+  return (
+    <View style={s.detailRow}>
+      <Text style={[s.detailLabel, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[s.detailValue, { color: colors.text }]}>{value}</Text>
     </View>
   );
 }
@@ -153,4 +211,14 @@ const s = StyleSheet.create({
   dailyLabel:     { ...typography.base, fontWeight: '600' },
   dailyDate:      { ...typography.xs, marginTop: 2 },
   dailyAmount:    { ...typography.base, fontWeight: '700' },
+  modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet:     { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: 40 },
+  modalHandle:    { width: 40, height: 4, borderRadius: 2, backgroundColor: '#555', alignSelf: 'center', marginBottom: spacing.md },
+  modalTitle:     { ...typography.lg, fontWeight: '700', marginBottom: spacing.md },
+  detailRow:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#333' },
+  detailLabel:    { ...typography.sm },
+  detailValue:    { ...typography.sm, fontWeight: '500', flex: 1, textAlign: 'right' },
+  modalActions:   { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  modalBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: spacing.sm, borderRadius: radius.md, borderWidth: 1 },
+  modalBtnText:   { ...typography.sm, fontWeight: '600' },
 });

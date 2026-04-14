@@ -154,6 +154,11 @@ export async function deleteTransaction(id: string): Promise<void> {
   await db.runAsync('DELETE FROM transactions WHERE id = ?', [id]);
 }
 
+export async function deleteAllRecurringByCategory(categoryId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM transactions WHERE category_id = ? AND is_recurring = 1', [categoryId]);
+}
+
 export async function markTransactionPaid(id: string, paid_date: string | null): Promise<void> {
   const db = await getDb();
   await db.runAsync('UPDATE transactions SET paid_date = ? WHERE id = ?', [paid_date, id]);
@@ -668,7 +673,7 @@ export async function cascadeOpeningBalances(month: number, year: number, forwar
     );
     const income  = totals[0]?.income  ?? 0;
     const expense = totals[0]?.expense ?? 0;
-    runningOpening = Math.max(0, runningOpening + income - expense);
+    runningOpening = runningOpening + income - expense;
   }
 }
 
@@ -929,7 +934,7 @@ export async function rolloverFromPreviousMonth(): Promise<{ amount: number; fro
   const prevIncome  = prevTotals[0]?.income  ?? 0;
   const prevExpense = prevTotals[0]?.expense ?? 0;
   const closing     = prevOpening + prevIncome - prevExpense;
-  const rollover    = Math.max(0, closing);
+  const rollover    = closing;
 
   await setMonthBalance(m, y, rollover, cfg.monthly_savings ?? 0);
   return {
@@ -975,9 +980,9 @@ export async function transferLastMonthBalance(): Promise<{ amount: number; crea
   const prevIncome  = prevTotals[0]?.income  ?? 0;
   const prevExpense = prevTotals[0]?.expense ?? 0;
   const balance     = prevOpening + prevIncome - prevExpense;
-  const amount      = Math.max(0, balance);
+  const amount      = balance;
 
-  if (amount <= 0) return { amount: 0, created: false };
+  if (amount === 0) return { amount: 0, created: false };
 
   await db.runAsync(
     'INSERT INTO transactions (id, amount, type, date, note) VALUES (?,?,?,?,?)',
