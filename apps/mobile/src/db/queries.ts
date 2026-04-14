@@ -525,10 +525,13 @@ export async function getEndOfMonthProjection(): Promise<{
 
 export async function autoPopulateRecurring(year: number, month: number): Promise<void> {
   const db = await getDb();
+  const monthStr = `${year}-${String(month).padStart(2,'0')}`;
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  // Pass 1: categories explicitly configured as recurring
   const cats = await db.getAllAsync<Category>(
     `SELECT * FROM categories WHERE is_recurring = 1 AND is_active = 1 AND default_amount > 0`
   );
-  const monthStr = `${year}-${String(month).padStart(2,'0')}`;
   for (const cat of cats) {
     const txType = cat.type === 'income' ? 'income' : 'expense';
     const existing = await db.getAllAsync<{count:number}>(
@@ -536,12 +539,43 @@ export async function autoPopulateRecurring(year: number, month: number): Promis
       [cat.id, monthStr, txType]
     );
     if (existing[0].count > 0) continue;
-    const daysInMonth = new Date(year, month, 0).getDate();
     const day = cat.due_day ? Math.min(cat.due_day, daysInMonth) : 1;
     const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     await db.runAsync(
       'INSERT INTO transactions (id, amount, type, date, category_id, is_recurring) VALUES (?,?,?,?,?,1)',
       [uuid(), cat.default_amount, txType, date, cat.id]
+    );
+  }
+
+  // Pass 2: propagate recurring transactions that exist in any prior month
+  // but whose category wasn't configured via the recurring toggle
+  // (handles manually-created or imported recurring transactions)
+  const templates = await db.getAllAsync<{
+    category_id: string; amount: number; type: string; day: number;
+  }>(`
+    SELECT t.category_id,
+           t.amount,
+           t.type,
+           CAST(strftime('%d', MAX(t.date)) AS INTEGER) AS day
+    FROM transactions t
+    WHERE t.is_recurring = 1
+      AND t.type != 'transfer'
+      AND t.category_id IS NOT NULL
+      AND strftime('%Y-%m', t.date) < ?
+    GROUP BY t.category_id, t.type
+  `, [monthStr]);
+
+  for (const tpl of templates) {
+    const existing = await db.getAllAsync<{count:number}>(
+      `SELECT COUNT(*) as count FROM transactions WHERE category_id=? AND strftime('%Y-%m',date)=? AND type=? AND is_recurring=1`,
+      [tpl.category_id, monthStr, tpl.type]
+    );
+    if (existing[0].count > 0) continue;
+    const day = Math.min(tpl.day, daysInMonth);
+    const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    await db.runAsync(
+      'INSERT INTO transactions (id, amount, type, date, category_id, is_recurring) VALUES (?,?,?,?,?,1)',
+      [uuid(), tpl.amount, tpl.type, date, tpl.category_id]
     );
   }
 }
@@ -673,7 +707,7 @@ export async function cascadeOpeningBalances(month: number, year: number, forwar
     );
     const income  = totals[0]?.income  ?? 0;
     const expense = totals[0]?.expense ?? 0;
-    runningOpening = runningOpening + income - expense;
+    runningOpening = runningOpening + income - expense - savings;
   }
 }
 
@@ -1096,7 +1130,7 @@ export async function getDashboardDataForMonth(month: number, year: number): Pro
 
   return {
     income, expense, opening, savings,
-    balance: opening + income - expense, // carryover counts as income
+    balance: opening + income - expense - savings,
     transactions: txs,
     recurring: cats.map(c => ({
       name: c.name, icon: c.icon, color: c.color,
