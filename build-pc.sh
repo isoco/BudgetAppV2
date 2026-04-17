@@ -121,7 +121,7 @@ fi
 # ─── 2. Install deps ──────────────────────────────────────────────────────────
 echo "▶ Installing dependencies..."
 cd "$WSL_DST"
-pnpm install --no-frozen-lockfile --silent
+pnpm install --no-frozen-lockfile
 
 # ─── 2b. Patch gradlew — inject JAVA_HOME + sdk.dir at runtime inside EAS temp dir
 GRADLEW="$WSL_DST/apps/mobile/android/gradlew"
