@@ -79,16 +79,32 @@ echo ""
 
 # ─── 1. Sync ──────────────────────────────────────────────────────────────────
 echo "▶ Syncing files to WSL2..."
-# Delete source files in WSL first (keep node_modules to avoid full reinstall)
-find "$WSL_DST" -mindepth 1 -maxdepth 1 \
-  ! -name 'node_modules' ! -name '.pnpm-store' \
-  -exec rm -rf {} + 2>/dev/null || true
-
-rsync -a --checksum \
+rsync -a --checksum --delete \
   --exclude='node_modules' \
   --exclude='.git' \
   --exclude='*.apk' \
   "$WIN_SRC/" "$WSL_DST/"
+
+# ─── 1b. Verify sync ─────────────────────────────────────────────────────────
+echo "▶ Verifying key files synced correctly..."
+if grep -q "onToggle" "$WSL_DST/apps/mobile/src/components/TransactionItem.tsx"; then
+  echo "  ✔ TransactionItem.tsx — checkbox code present"
+else
+  echo "  ✗ TransactionItem.tsx — MISSING checkbox code! Sync failed."
+  exit 1
+fi
+if grep -q "manually_unchecked" "$WSL_DST/apps/mobile/app/(tabs)/transactions.tsx"; then
+  echo "  ✔ transactions.tsx — manually_unchecked fix present"
+else
+  echo "  ✗ transactions.tsx — MISSING manually_unchecked fix! Sync failed."
+  exit 1
+fi
+if grep -q "dayTxs" "$WSL_DST/apps/mobile/app/daily-tracker.tsx"; then
+  echo "  ✔ daily-tracker.tsx — expenses list present"
+else
+  echo "  ✗ daily-tracker.tsx — MISSING expenses list! Sync failed."
+  exit 1
+fi
 
 # ─── 2. Install deps ──────────────────────────────────────────────────────────
 echo "▶ Installing dependencies..."
@@ -132,7 +148,7 @@ find /tmp -maxdepth 1 -name "metro-*" -o -name "haste-map-*" 2>/dev/null | xargs
 echo "▶ Building APK (this may take a few minutes)..."
 BUILD_START=$(date +%s)
 cd "$WSL_DST/apps/mobile"
-EXPO_NO_METRO_CACHE=1 eas build -p android --profile preview --local --clear-cache
+EXPO_NO_METRO_CACHE=1 METRO_RESET_CACHE=true eas build -p android --profile preview --local --clear-cache
 BUILD_END=$(date +%s)
 
 # ─── 4. Locate APK ────────────────────────────────────────────────────────────

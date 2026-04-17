@@ -123,6 +123,7 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
     'ALTER TABLE categories ADD COLUMN default_amount REAL DEFAULT 0',
     'ALTER TABLE categories ADD COLUMN due_day INTEGER',
     'ALTER TABLE transactions ADD COLUMN paid_date TEXT',
+    'ALTER TABLE transactions ADD COLUMN manually_unchecked INTEGER DEFAULT 0',
     'ALTER TABLE fuel_entries ADD COLUMN transaction_id TEXT',
     'ALTER TABLE daily_spends ADD COLUMN transaction_id TEXT',
   ];

@@ -25,6 +25,7 @@ export interface Transaction {
   type: 'income' | 'expense' | 'transfer'; date: string;
   note: string | null; merchant: string | null;
   is_recurring: number; created_at: string; paid_date: string | null;
+  manually_unchecked: number;
   category_name?: string; category_icon?: string; category_color?: string;
 }
 
@@ -203,7 +204,12 @@ export async function updateTransactionAndFuture(
 
 export async function markTransactionPaid(id: string, paid_date: string | null): Promise<void> {
   const db = await getDb();
-  await db.runAsync('UPDATE transactions SET paid_date = ? WHERE id = ?', [paid_date, id]);
+  await db.runAsync('UPDATE transactions SET paid_date = ?, manually_unchecked = 0 WHERE id = ?', [paid_date, id]);
+}
+
+export async function markTransactionUnchecked(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE transactions SET paid_date = NULL, manually_unchecked = 1 WHERE id = ?', [id]);
 }
 
 export async function getMonthlySummary(): Promise<{ month: string; income: number; expense: number }[]> {

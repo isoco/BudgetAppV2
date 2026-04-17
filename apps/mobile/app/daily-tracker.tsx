@@ -9,8 +9,8 @@ import { format } from 'date-fns';
 import { useTheme } from '../src/theme/useTheme';
 import {
   getDailyTracking, initDailyTracking, upsertDailyEntry, getSettings, DailyEntry,
-  getMonthExpenseTotalsByDay, createTransaction,
-  getCategories, Category,
+  getMonthExpenseTotalsByDay, createTransaction, getTransactions,
+  getCategories, Category, Transaction,
 } from '../src/db/queries';
 
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -36,6 +36,7 @@ export default function DailyTrackerScreen() {
   const [categories, setCategories]     = useState<Category[]>([]);
   const [addCatId, setAddCatId]         = useState<string | null>(null);
   const [saving, setSaving]             = useState(false);
+  const [dayTxs, setDayTxs]             = useState<Transaction[]>([]);
 
   const load = useCallback(async () => {
     const s2 = await getSettings();
@@ -63,13 +64,17 @@ export default function DailyTrackerScreen() {
     else setMonth(m => m + 1);
   }
 
-  function openDay(entry: DailyEntry) {
+  async function openDay(entry: DailyEntry) {
     setModalDay(entry);
     setEditAllowed(String(entry.allowed_amount));
     setAddAmount('');
     setAddNote('');
     setAddCatId(null);
+    setDayTxs([]);
     setModalVisible(true);
+    const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(entry.day).padStart(2,'0')}`;
+    const txs = await getTransactions({ from: dateStr, to: dateStr, type: 'expense', limit: 100 });
+    setDayTxs(txs);
   }
 
   async function handleSaveBudget() {
@@ -108,12 +113,14 @@ export default function DailyTrackerScreen() {
       setAddAmount('');
       setAddNote('');
       setAddCatId(null);
-      const [totals, data] = await Promise.all([
+      const [totals, data, txs] = await Promise.all([
         getMonthExpenseTotalsByDay(year, month),
         getDailyTracking(year, month),
+        getTransactions({ from: dateStr, to: dateStr, type: 'expense', limit: 100 }),
       ]);
       setTxTotals(totals);
       setEntries(data);
+      setDayTxs(txs);
     } finally {
       setSaving(false);
     }
@@ -219,6 +226,7 @@ export default function DailyTrackerScreen() {
                 <Ionicons name="close" size={22} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
             {/* Budget row */}
             <View style={s.budgetRow}>
@@ -235,6 +243,26 @@ export default function DailyTrackerScreen() {
                 Spent €{modalSpentTotal.toFixed(2)}
               </Text>
             </View>
+
+            {/* Expenses list */}
+            {dayTxs.length > 0 && (
+              <>
+                <Text style={s.sectionLabel}>Expenses</Text>
+                {dayTxs.map(tx => (
+                  <View key={tx.id} style={s.txRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.txLabel} numberOfLines={1}>
+                        {tx.merchant || tx.note || tx.category_name || 'Expense'}
+                      </Text>
+                      {tx.category_name && (
+                        <Text style={s.txMeta}>{tx.category_name}</Text>
+                      )}
+                    </View>
+                    <Text style={s.txAmount}>-€{tx.amount.toFixed(2)}</Text>
+                  </View>
+                ))}
+              </>
+            )}
 
             {/* Add expense inline */}
             <Text style={s.sectionLabel}>Add Expense</Text>
@@ -278,6 +306,7 @@ export default function DailyTrackerScreen() {
                 : <Text style={s.addBtnText}>Add Expense</Text>
               }
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -329,5 +358,9 @@ function makeStyles(colors: any, spacing: any, radius: any) {
     catChipLabel:  { fontSize: 12, color: colors.textMuted },
     addBtn:        { backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md, alignItems: 'center', marginTop: spacing.xs },
     addBtnText:    { color: '#fff', fontWeight: '600', fontSize: 15 },
+    txRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    txLabel:       { fontSize: 14, color: colors.text, fontWeight: '500' },
+    txMeta:        { fontSize: 11, color: colors.textMuted, marginTop: 1 },
+    txAmount:      { fontSize: 14, color: colors.danger, fontWeight: '700' },
   });
 }

@@ -7,7 +7,7 @@ import { format, startOfMonth, endOfMonth } from 'date-fns';
 import {
   getTransactions, deleteTransaction, deleteAllRecurringByCategory,
   deleteRecurringFuture, deleteRecurringPast,
-  markTransactionPaid, cascadeOpeningBalances, Transaction,
+  markTransactionPaid, markTransactionUnchecked, cascadeOpeningBalances, Transaction,
 } from '../../src/db/queries';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
@@ -46,8 +46,8 @@ export default function TransactionsScreen() {
       limit: 200,
     });
 
-    // Auto-check past transactions that haven't been checked yet
-    const toCheck = data.filter(tx => tx.date <= today && !tx.paid_date);
+    // Auto-check past transactions that haven't been checked and weren't manually unchecked
+    const toCheck = data.filter(tx => tx.date <= today && !tx.paid_date && !tx.manually_unchecked);
     if (toCheck.length > 0) {
       await Promise.all(toCheck.map(tx => markTransactionPaid(tx.id, tx.date)));
       // Re-fetch with updated paid_dates
@@ -67,11 +67,18 @@ export default function TransactionsScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   async function handleToggle(tx: Transaction) {
-    const newPaidDate = tx.paid_date ? null : today;
-    await markTransactionPaid(tx.id, newPaidDate);
-    setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, paid_date: newPaidDate } : t));
-    // Update selectedTx if it's open
-    if (selectedTx?.id === tx.id) setSelectedTx(prev => prev ? { ...prev, paid_date: newPaidDate } : null);
+    if (tx.paid_date) {
+      // User is unchecking — mark as manually unchecked so auto-check won't re-check it
+      await markTransactionUnchecked(tx.id);
+      const updated = { ...tx, paid_date: null, manually_unchecked: 1 };
+      setTransactions(prev => prev.map(t => t.id === tx.id ? updated : t));
+      if (selectedTx?.id === tx.id) setSelectedTx(updated);
+    } else {
+      await markTransactionPaid(tx.id, today);
+      const updated = { ...tx, paid_date: today, manually_unchecked: 0 };
+      setTransactions(prev => prev.map(t => t.id === tx.id ? updated : t));
+      if (selectedTx?.id === tx.id) setSelectedTx(updated);
+    }
   }
 
   async function handleDelete(tx: Transaction) {
