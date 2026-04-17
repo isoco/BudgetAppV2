@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 import {
   getCategories, createTransaction, updateTransaction, updateTransactionAndFuture,
   updateCategory, refreshRecurringAllFutureMonths, cascadeOpeningBalances,
-  autoPopulateRecurring, getTransactionById, Transaction,
+  autoPopulateRecurring, getTransactionById, markTransactionPaid, Transaction,
 } from '../src/db/queries';
 import { useQuery } from '../src/hooks/useQuery';
 import { useTheme } from '../src/theme/useTheme';
@@ -30,6 +30,7 @@ export default function AddTransactionScreen() {
   const [saving, setSaving]     = useState(false);
   const [recurring, setRecurring] = useState(false);
   const [recurringDay, setRecurringDay] = useState('');
+  const [paid, setPaid] = useState(false);
 
   // Load existing transaction for edit mode
   useEffect(() => {
@@ -43,6 +44,7 @@ export default function AddTransactionScreen() {
       setMerchant(tx.merchant ?? '');
       setCatId(tx.category_id);
       setTxDate(tx.date);
+      setPaid(!!tx.paid_date);
     });
   }, [txId]);
 
@@ -91,6 +93,7 @@ export default function AddTransactionScreen() {
     } else {
       await updateTransaction(tx.id, { ...data, date: txDate });
     }
+    await markTransactionPaid(tx.id, paid ? (tx.paid_date ?? txDate) : null);
     await cascadeOpeningBalances(txMonth, txYear);
     router.back();
   }
@@ -230,6 +233,19 @@ export default function AddTransactionScreen() {
           </View>
         )}
 
+        {isEdit && (
+          <TouchableOpacity style={s.paidRow} onPress={() => setPaid(v => !v)}>
+            <Ionicons
+              name={paid ? 'checkbox' : 'square-outline'}
+              size={24}
+              color={paid ? colors.success : colors.textMuted}
+            />
+            <Text style={[s.paidLabel, { color: paid ? colors.success : colors.textMuted }]}>
+              {paid ? 'Marked as done' : 'Mark as done'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={[s.saveBtn, saving && s.saveBtnDisabled]} onPress={handleSave} disabled={saving}>
           <Text style={s.saveBtnText}>{saving ? 'Saving…' : isEdit ? 'Update' : 'Save'}</Text>
         </TouchableOpacity>
@@ -265,6 +281,8 @@ function makeStyles(colors: any, spacing: any, radius: any) {
     recurringDayLabel: { fontSize: 13, color: colors.textMuted },
     recurringDayInput: { backgroundColor: colors.surfaceHigh, borderRadius: radius.md, padding: spacing.sm, color: colors.text, fontSize: 15, width: 60, textAlign: 'center' },
     recurringNote:     { fontSize: 12, color: colors.warning },
+    paidRow:           { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, marginBottom: spacing.md },
+    paidLabel:         { fontSize: 15, fontWeight: '500' },
     saveBtn:           { backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md, alignItems: 'center', marginTop: spacing.md },
     saveBtnDisabled:   { opacity: 0.6 },
     saveBtnText:       { color: '#fff', fontWeight: '600', fontSize: 15 },

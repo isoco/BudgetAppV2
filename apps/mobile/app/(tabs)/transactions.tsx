@@ -206,7 +206,7 @@ export default function TransactionsScreen() {
         renderItem={({ item }) => {
           if (item.type === 'daily') {
             return (
-              <View style={[s.dailyRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[s.dailyRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <View>
                   <Text style={[s.dailyLabel, { color: colors.text }]}>Life Expenses</Text>
                   <Text style={[s.dailyDate, { color: colors.textMuted }]}>
@@ -245,7 +245,7 @@ export default function TransactionsScreen() {
 
       <Modal visible={!!selectedTx} transparent animationType="slide" onRequestClose={() => setSelectedTx(null)}>
         <TouchableOpacity style={s.modalOverlay} activeOpacity={1} onPress={() => setSelectedTx(null)}>
-          <TouchableOpacity activeOpacity={1} style={[s.modalSheet, { backgroundColor: colors.card }]}>
+          <TouchableOpacity activeOpacity={1} style={[s.modalSheet, { backgroundColor: colors.surface }]}>
             {selectedTx && (
               <>
                 <View style={s.modalHandle} />

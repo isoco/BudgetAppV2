@@ -36,7 +36,7 @@ export function TransactionItem({ transaction: tx, onDelete, onPress, onLongPres
       activeOpacity={onPress ? 0.7 : 1}
     >
       {onToggle !== undefined && (
-        <TouchableOpacity onPress={onToggle} style={s.checkbox} hitSlop={8}>
+        <TouchableOpacity onPress={onToggle} style={s.checkbox} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons
             name={checked ? 'checkbox' : 'square-outline'}
             size={22}
