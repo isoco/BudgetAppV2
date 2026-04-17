@@ -116,15 +116,18 @@ node -e "
 echo "▶ Injected JAVA_HOME + ANDROID_HOME into eas.json preview env"
 
 # ─── 3. Build ─────────────────────────────────────────────────────────────────
-echo "▶ Clearing Metro JS cache..."
+echo "▶ Clearing all caches..."
 rm -rf "$HOME/.expo/metro-cache"
+rm -rf "$HOME/.expo/cache"
 rm -rf "$WSL_DST/apps/mobile/.expo"
+rm -rf "$WSL_DST/apps/mobile/.metro"
 rm -rf "$WSL_DST/node_modules/.cache"
+find /tmp -maxdepth 1 -name "metro-*" -o -name "haste-map-*" 2>/dev/null | xargs rm -rf
 
 echo "▶ Building APK (this may take a few minutes)..."
 BUILD_START=$(date +%s)
 cd "$WSL_DST/apps/mobile"
-eas build -p android --profile preview --local --clear-cache
+EXPO_NO_METRO_CACHE=1 eas build -p android --profile preview --local --clear-cache
 BUILD_END=$(date +%s)
 
 # ─── 4. Locate APK ────────────────────────────────────────────────────────────
