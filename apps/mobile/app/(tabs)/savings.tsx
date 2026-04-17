@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getSavingsHistory, SavingsMonth, updateMonthlySavings, cascadeOpeningBalances } from '../../src/db/queries';
+import { getSavingsHistory, getMonthBalance, SavingsMonth, updateMonthlySavings, cascadeOpeningBalances } from '../../src/db/queries';
 import { useQuery } from '../../src/hooks/useQuery';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
@@ -30,11 +30,26 @@ export default function SavingsScreen() {
   const months: SavingsMonth[] = data?.months ?? [];
   const total = data?.total ?? 0;
 
-  const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [editValue, setEditValue]   = useState('');
-  const [showPicker, setShowPicker] = useState(false);
+  const now = new Date();
+  const curMonth = now.getMonth() + 1;
+  const curYear  = now.getFullYear();
 
-  useFocusEffect(useCallback(() => { refetch(); }, []));
+  const [editingKey, setEditingKey]       = useState<string | null>(null);
+  const [editValue, setEditValue]         = useState('');
+  const [showPicker, setShowPicker]       = useState(false);
+  const [curSavings, setCurSavings]       = useState(0);
+  const [editingCurrent, setEditingCurrent] = useState(false);
+  const [currentInput, setCurrentInput]   = useState('');
+
+  const loadCurrentMonth = useCallback(async () => {
+    const mb = await getMonthBalance(curMonth, curYear);
+    setCurSavings(mb.savings_contribution);
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    refetch();
+    loadCurrentMonth();
+  }, []));
 
   const monthOptions = getMonthOptions();
 
@@ -48,6 +63,17 @@ export default function SavingsScreen() {
     await updateMonthlySavings(month, year, num);
     await cascadeOpeningBalances(month, year);
     setEditingKey(null);
+    refetch();
+    loadCurrentMonth();
+  }
+
+  async function saveCurrentMonth() {
+    const num = parseFloat(currentInput);
+    if (isNaN(num) || num < 0) return Alert.alert('Enter a valid amount');
+    await updateMonthlySavings(curMonth, curYear, num);
+    await cascadeOpeningBalances(curMonth, curYear);
+    setCurSavings(num);
+    setEditingCurrent(false);
     refetch();
   }
 
@@ -77,9 +103,43 @@ export default function SavingsScreen() {
         <Text style={[s.totalAmount, { color: staticColors.primary }]}>{fmt(total)}</Text>
       </View>
 
+      {/* Current month savings */}
+      <View style={[s.curCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={s.curCardHeader}>
+          <Ionicons name="calendar-outline" size={16} color={staticColors.warning} />
+          <Text style={[s.curCardTitle, { color: colors.textMuted }]}>
+            {now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </Text>
+        </View>
+        {editingCurrent ? (
+          <View style={s.curEditRow}>
+            <TextInput
+              style={[s.curInput, { color: colors.text, borderColor: colors.border }]}
+              value={currentInput}
+              onChangeText={setCurrentInput}
+              keyboardType="decimal-pad"
+              autoFocus
+              placeholder="0.00"
+              placeholderTextColor={colors.textMuted}
+            />
+            <TouchableOpacity onPress={saveCurrentMonth} style={s.curBtn}>
+              <Ionicons name="checkmark" size={20} color={staticColors.success} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setEditingCurrent(false)} style={s.curBtn}>
+              <Ionicons name="close" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={() => { setCurrentInput(String(curSavings)); setEditingCurrent(true); }} style={s.curAmtRow}>
+            <Text style={[s.curAmt, { color: staticColors.warning }]}>{fmt(curSavings)}</Text>
+            <Text style={[s.curHint, { color: colors.textSubtle }]}>tap to edit</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* Month picker */}
       {showPicker && (
-        <View style={[s.pickerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[s.pickerCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[s.pickerTitle, { color: colors.textMuted }]}>Select month to set savings:</Text>
           <FlatList
             data={monthOptions}
@@ -108,7 +168,7 @@ export default function SavingsScreen() {
         const [y, m] = editingKey.split('-').map(Number);
         const label  = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         return (
-          <View style={[s.editCard, { backgroundColor: colors.card, borderColor: staticColors.primary + '66' }]}>
+          <View style={[s.editCard, { backgroundColor: colors.surface, borderColor: staticColors.primary + '66' }]}>
             <Text style={[s.editTitle, { color: colors.text }]}>Savings for {label}</Text>
             <View style={s.editRow}>
               <TextInput
@@ -145,7 +205,7 @@ export default function SavingsScreen() {
         }
         renderItem={({ item }) => (
           <TouchableOpacity
-            style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={[s.row, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => startEdit(item.month, item.year)}
           >
             <View style={s.rowLeft}>
@@ -172,6 +232,15 @@ const s = StyleSheet.create({
   totalCard:      { marginHorizontal: spacing.md, marginBottom: spacing.md, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, alignItems: 'center' },
   totalLabel:     { ...typography.sm, marginBottom: 4 },
   totalAmount:    { ...typography['3xl'], fontWeight: '800' },
+  curCard:        { marginHorizontal: spacing.md, marginBottom: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md },
+  curCardHeader:  { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
+  curCardTitle:   { ...typography.xs, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  curAmtRow:      { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
+  curAmt:         { ...typography['2xl'], fontWeight: '800' },
+  curHint:        { ...typography.xs },
+  curEditRow:     { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  curInput:       { flex: 1, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 8, ...typography.lg },
+  curBtn:         { padding: 4 },
   pickerCard:     { marginHorizontal: spacing.md, marginBottom: spacing.sm, borderRadius: radius.lg, borderWidth: 1, overflow: 'hidden' },
   pickerTitle:    { ...typography.xs, padding: spacing.sm, paddingBottom: 4 },
   pickerRow:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 10, borderBottomWidth: 1 },

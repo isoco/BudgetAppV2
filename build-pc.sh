@@ -79,7 +79,12 @@ echo ""
 
 # ─── 1. Sync ──────────────────────────────────────────────────────────────────
 echo "▶ Syncing files to WSL2..."
-rsync -a --delete \
+# Delete source files in WSL first (keep node_modules to avoid full reinstall)
+find "$WSL_DST" -mindepth 1 -maxdepth 1 \
+  ! -name 'node_modules' ! -name '.pnpm-store' \
+  -exec rm -rf {} + 2>/dev/null || true
+
+rsync -a --checksum \
   --exclude='node_modules' \
   --exclude='.git' \
   --exclude='*.apk' \
