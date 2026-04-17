@@ -34,7 +34,8 @@ export default function TransactionsScreen() {
   const [filter, setFilter]             = useState<Filter>('all');
   const [selectedTx, setSelectedTx]     = useState<Transaction | null>(null);
   const [search, setSearch]             = useState('');
-  const now = new Date();
+  const now   = new Date();
+  const today = format(now, 'yyyy-MM-dd');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -44,11 +45,34 @@ export default function TransactionsScreen() {
       type:  filter === 'all' ? undefined : filter,
       limit: 200,
     });
-    setTransactions(data);
+
+    // Auto-check past transactions that haven't been checked yet
+    const toCheck = data.filter(tx => tx.date <= today && !tx.paid_date);
+    if (toCheck.length > 0) {
+      await Promise.all(toCheck.map(tx => markTransactionPaid(tx.id, tx.date)));
+      // Re-fetch with updated paid_dates
+      const refreshed = await getTransactions({
+        from:  format(startOfMonth(now), 'yyyy-MM-dd'),
+        to:    format(endOfMonth(now),   'yyyy-MM-dd'),
+        type:  filter === 'all' ? undefined : filter,
+        limit: 200,
+      });
+      setTransactions(refreshed);
+    } else {
+      setTransactions(data);
+    }
     setLoading(false);
   }, [filter]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  async function handleToggle(tx: Transaction) {
+    const newPaidDate = tx.paid_date ? null : today;
+    await markTransactionPaid(tx.id, newPaidDate);
+    setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, paid_date: newPaidDate } : t));
+    // Update selectedTx if it's open
+    if (selectedTx?.id === tx.id) setSelectedTx(prev => prev ? { ...prev, paid_date: newPaidDate } : null);
+  }
 
   async function handleDelete(tx: Transaction) {
     const [y, m] = tx.date.split('-').map(Number);
@@ -96,6 +120,12 @@ export default function TransactionsScreen() {
     }
   }
 
+  // Checked summary (based on full transaction list, not search filter)
+  const checkedTxs     = transactions.filter(tx => tx.paid_date);
+  const checkedIncome  = checkedTxs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0);
+  const checkedExpense = checkedTxs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
+  const checkedBalance = checkedIncome - checkedExpense;
+
   // Filter transactions by search query
   const q = search.trim().toLowerCase();
   const filtered = q
@@ -114,6 +144,26 @@ export default function TransactionsScreen() {
     <View style={[s.container, { backgroundColor: colors.bg }]}>
       <View style={s.header}>
         <Text style={[s.title, { color: colors.text }]}>Transactions</Text>
+      </View>
+
+      {/* Checked summary */}
+      <View style={[s.summary, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={s.summaryCol}>
+          <Text style={[s.summaryLabel, { color: colors.textMuted }]}>Income</Text>
+          <Text style={[s.summaryValue, { color: staticColors.success }]}>+€{checkedIncome.toFixed(2)}</Text>
+        </View>
+        <View style={[s.summaryDivider, { backgroundColor: colors.border }]} />
+        <View style={s.summaryCol}>
+          <Text style={[s.summaryLabel, { color: colors.textMuted }]}>Expenses</Text>
+          <Text style={[s.summaryValue, { color: staticColors.danger }]}>-€{checkedExpense.toFixed(2)}</Text>
+        </View>
+        <View style={[s.summaryDivider, { backgroundColor: colors.border }]} />
+        <View style={s.summaryCol}>
+          <Text style={[s.summaryLabel, { color: colors.textMuted }]}>Balance</Text>
+          <Text style={[s.summaryValue, { color: checkedBalance >= 0 ? staticColors.success : staticColors.danger }]}>
+            {checkedBalance >= 0 ? '+' : ''}€{checkedBalance.toFixed(2)}
+          </Text>
+        </View>
       </View>
 
       {/* Search */}
@@ -170,24 +220,13 @@ export default function TransactionsScreen() {
             );
           }
           return (
-            <View>
-              <TransactionItem
-                transaction={item.tx}
-                onPress={() => setSelectedTx(item.tx)}
-                onDelete={() => handleDelete(item.tx)}
-                onLongPress={async () => {
-                  const newPaidDate = item.tx.paid_date ? null : new Date().toISOString().split('T')[0];
-                  await markTransactionPaid(item.tx.id, newPaidDate);
-                  load();
-                }}
-              />
-              {item.tx.paid_date && (
-                <View style={s.paidBadge}>
-                  <Ionicons name="checkmark-circle" size={12} color={staticColors.success} />
-                  <Text style={s.paidText}>Paid</Text>
-                </View>
-              )}
-            </View>
+            <TransactionItem
+              transaction={item.tx}
+              onPress={() => setSelectedTx(item.tx)}
+              onDelete={() => handleDelete(item.tx)}
+              checked={!!item.tx.paid_date}
+              onToggle={() => handleToggle(item.tx)}
+            />
           );
         }}
         contentContainerStyle={s.list}
@@ -218,7 +257,7 @@ export default function TransactionsScreen() {
                 {selectedTx.merchant && <DetailRow label="Merchant" value={selectedTx.merchant} colors={colors} />}
                 {selectedTx.note     && <DetailRow label="Note"     value={selectedTx.note}     colors={colors} />}
                 <DetailRow label="Recurring" value={selectedTx.is_recurring ? 'Yes 🔁' : 'No'} colors={colors} />
-                {selectedTx.paid_date && <DetailRow label="Paid on" value={selectedTx.paid_date} colors={colors} />}
+                <DetailRow label="Done"      value={selectedTx.paid_date ? `Yes (${selectedTx.paid_date})` : 'No'} colors={colors} />
                 <View style={s.modalActions}>
                   <TouchableOpacity
                     style={[s.modalBtn, { borderColor: colors.primary }]}
@@ -226,6 +265,19 @@ export default function TransactionsScreen() {
                   >
                     <Ionicons name="pencil-outline" size={16} color={colors.primary} />
                     <Text style={[s.modalBtnText, { color: colors.primary }]}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.modalBtn, { borderColor: selectedTx.paid_date ? colors.border : staticColors.success }]}
+                    onPress={() => handleToggle(selectedTx)}
+                  >
+                    <Ionicons
+                      name={selectedTx.paid_date ? 'square-outline' : 'checkbox'}
+                      size={16}
+                      color={selectedTx.paid_date ? colors.textMuted : staticColors.success}
+                    />
+                    <Text style={[s.modalBtnText, { color: selectedTx.paid_date ? colors.textMuted : staticColors.success }]}>
+                      {selectedTx.paid_date ? 'Uncheck' : 'Done'}
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.danger }]} onPress={() => handleDelete(selectedTx)}>
                     <Ionicons name="trash-outline" size={16} color={staticColors.danger} />
@@ -258,6 +310,11 @@ const s = StyleSheet.create({
   header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
   title:          { ...typography['2xl'], fontWeight: '700' },
   fab:            { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, backgroundColor: staticColors.primary, justifyContent: 'center', alignItems: 'center', shadowColor: staticColors.primary, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
+  summary:        { flexDirection: 'row', marginHorizontal: spacing.md, marginBottom: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.sm },
+  summaryCol:     { flex: 1, alignItems: 'center', gap: 2 },
+  summaryDivider: { width: 1, marginVertical: 4 },
+  summaryLabel:   { ...typography.xs },
+  summaryValue:   { ...typography.sm, fontWeight: '700' },
   searchRow:      { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginHorizontal: spacing.md, marginBottom: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.md, borderWidth: 1 },
   searchInput:    { flex: 1, ...typography.sm, padding: 0 },
   filters:        { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
@@ -267,8 +324,6 @@ const s = StyleSheet.create({
   chipTextActive: { color: '#fff', fontWeight: '600' },
   list:           { padding: spacing.md, paddingBottom: 80 },
   empty:          { ...typography.base, textAlign: 'center', marginTop: spacing.xl },
-  paidBadge:      { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.md, paddingBottom: 4, marginTop: -8 },
-  paidText:       { ...typography.xs, color: staticColors.success, fontWeight: '600' },
   dailyRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderRadius: radius.md, borderWidth: 1, marginBottom: spacing.sm },
   dailyLabel:     { ...typography.base, fontWeight: '600' },
   dailyDate:      { ...typography.xs, marginTop: 2 },
@@ -280,7 +335,7 @@ const s = StyleSheet.create({
   detailRow:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#333' },
   detailLabel:    { ...typography.sm },
   detailValue:    { ...typography.sm, fontWeight: '500', flex: 1, textAlign: 'right' },
-  modalActions:   { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
-  modalBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: spacing.sm, borderRadius: radius.md, borderWidth: 1 },
+  modalActions:   { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.lg },
+  modalBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: spacing.sm, borderRadius: radius.md, borderWidth: 1, minWidth: '45%' },
   modalBtnText:   { ...typography.xs, fontWeight: '600' },
 });

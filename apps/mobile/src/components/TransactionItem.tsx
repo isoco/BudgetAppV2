@@ -19,9 +19,11 @@ interface Props {
   onDelete?: () => void;
   onPress?: () => void;
   onLongPress?: () => void;
+  checked?: boolean;
+  onToggle?: () => void;
 }
 
-export function TransactionItem({ transaction: tx, onDelete, onPress, onLongPress }: Props) {
+export function TransactionItem({ transaction: tx, onDelete, onPress, onLongPress, checked, onToggle }: Props) {
   const isIncome = tx.type === 'income';
   const label    = tx.merchant || tx.note || tx.category_name || 'Transaction';
   const color    = tx.category_color || colors.dark.textSubtle;
@@ -33,11 +35,20 @@ export function TransactionItem({ transaction: tx, onDelete, onPress, onLongPres
       onLongPress={onLongPress}
       activeOpacity={onPress ? 0.7 : 1}
     >
+      {onToggle !== undefined && (
+        <TouchableOpacity onPress={onToggle} style={s.checkbox} hitSlop={8}>
+          <Ionicons
+            name={checked ? 'checkbox' : 'square-outline'}
+            size={22}
+            color={checked ? colors.success : colors.dark.textSubtle}
+          />
+        </TouchableOpacity>
+      )}
       <View style={[s.icon, { backgroundColor: color + '22' }]}>
         <Text style={s.emoji}>{iconToEmoji(tx.category_icon ?? '')}</Text>
       </View>
       <View style={s.body}>
-        <Text style={s.label} numberOfLines={1}>{label}</Text>
+        <Text style={[s.label, checked === false && s.labelDim]} numberOfLines={1}>{label}</Text>
         <Text style={s.meta}>
           {tx.category_name && `${tx.category_name} · `}
           {format(new Date(tx.date), 'MMM d')}
@@ -45,7 +56,7 @@ export function TransactionItem({ transaction: tx, onDelete, onPress, onLongPres
         </Text>
       </View>
       <View style={s.right}>
-        <Text style={[s.amount, { color: isIncome ? colors.success : colors.dark.text }]}>
+        <Text style={[s.amount, { color: isIncome ? colors.success : colors.dark.text }, checked === false && s.amountDim]}>
           {isIncome ? '+' : '-'}€{tx.amount.toFixed(2)}
         </Text>
         {onDelete && (
@@ -68,13 +79,16 @@ function iconToEmoji(icon: string): string {
 }
 
 const s = StyleSheet.create({
-  container: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.dark.border },
-  icon:      { width: 44, height: 44, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center', marginRight: spacing.sm },
-  emoji:     { fontSize: 20 },
-  body:      { flex: 1 },
-  label:     { ...typography.base, color: colors.dark.text, fontWeight: '500' },
-  meta:      { ...typography.xs, color: colors.dark.textMuted, marginTop: 2 },
-  right:     { alignItems: 'flex-end', gap: 4 },
-  amount:    { ...typography.base, fontWeight: '600' },
-  del:       { padding: 4 },
+  container:  { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.dark.border },
+  checkbox:   { marginRight: spacing.sm },
+  icon:       { width: 44, height: 44, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center', marginRight: spacing.sm },
+  emoji:      { fontSize: 20 },
+  body:       { flex: 1 },
+  label:      { ...typography.base, color: colors.dark.text, fontWeight: '500' },
+  labelDim:   { opacity: 0.4 },
+  meta:       { ...typography.xs, color: colors.dark.textMuted, marginTop: 2 },
+  right:      { alignItems: 'flex-end', gap: 4 },
+  amount:     { ...typography.base, fontWeight: '600' },
+  amountDim:  { opacity: 0.4 },
+  del:        { padding: 4 },
 });
