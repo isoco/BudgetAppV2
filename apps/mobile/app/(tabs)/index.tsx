@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   ScrollView, View, Text, StyleSheet, RefreshControl,
-  TouchableOpacity, Modal, TextInput, Alert, FlatList, PanResponder,
+  TouchableOpacity, Modal, TextInput, Alert, FlatList,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,22 +54,6 @@ export default function DashboardScreen() {
     else setViewMonth(m => m + 1);
   }
 
-  // Swipe gesture for month nav
-  const swipeRef = useRef({ startX: 0 });
-  const panResponder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 15 && Math.abs(g.dy) < 30,
-    onPanResponderGrant: (_, g) => { swipeRef.current.startX = g.x0; },
-    onPanResponderRelease: (_, g) => {
-      if (g.dx < -50) nextMonthRef.current?.();
-      else if (g.dx > 50) prevMonthRef.current?.();
-    },
-  })).current;
-
-  // Refs to avoid stale closure in PanResponder
-  const prevMonthRef = useRef(prevMonth);
-  const nextMonthRef = useRef(nextMonth);
-  useEffect(() => { prevMonthRef.current = prevMonth; nextMonthRef.current = nextMonth; });
 
   // ── privacy ───────────────────────────────────────────────────────────────
   const [privacyEnabled,  setPrivacyEnabled]  = useState(false);
@@ -235,7 +219,6 @@ export default function DashboardScreen() {
       contentContainerStyle={s.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} tintColor={staticColors.primary} />}
       keyboardShouldPersistTaps="handled"
-      {...panResponder.panHandlers}
     >
       {/* Header */}
       <View style={s.header}>
