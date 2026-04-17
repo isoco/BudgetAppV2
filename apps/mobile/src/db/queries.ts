@@ -161,6 +161,46 @@ export async function deleteAllRecurringByCategory(categoryId: string): Promise<
   await db.runAsync('UPDATE categories SET is_recurring = 0, default_amount = 0 WHERE id = ?', [categoryId]);
 }
 
+export async function getTransactionById(id: string): Promise<Transaction | null> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Transaction>(`${TX_SELECT} WHERE t.id = ?`, [id]);
+  return rows[0] ?? null;
+}
+
+export async function deleteRecurringFuture(categoryId: string, fromDate: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'DELETE FROM transactions WHERE category_id = ? AND is_recurring = 1 AND date >= ?',
+    [categoryId, fromDate]
+  );
+}
+
+export async function deleteRecurringPast(categoryId: string, toDate: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'DELETE FROM transactions WHERE category_id = ? AND is_recurring = 1 AND date <= ?',
+    [categoryId, toDate]
+  );
+}
+
+export async function updateTransactionAndFuture(
+  categoryId: string, fromDate: string,
+  data: Partial<Pick<Transaction, 'amount' | 'note' | 'merchant'>>
+): Promise<void> {
+  const db = await getDb();
+  const keys = Object.keys(data) as (keyof typeof data)[];
+  if (!keys.length) return;
+  const sets = keys.map(k => `${k} = ?`).join(', ');
+  const values = keys.map(k => data[k] ?? null);
+  await db.runAsync(
+    `UPDATE transactions SET ${sets} WHERE category_id = ? AND is_recurring = 1 AND date >= ?`,
+    [...values, categoryId, fromDate]
+  );
+  if (data.amount !== undefined) {
+    await db.runAsync('UPDATE categories SET default_amount = ? WHERE id = ?', [data.amount, categoryId]);
+  }
+}
+
 export async function markTransactionPaid(id: string, paid_date: string | null): Promise<void> {
   const db = await getDb();
   await db.runAsync('UPDATE transactions SET paid_date = ? WHERE id = ?', [paid_date, id]);
@@ -452,11 +492,6 @@ export async function getSavingsHistory(): Promise<{ months: SavingsMonth[]; tot
      ORDER BY year ASC, month ASC`
   );
 
-  // Also include current month from settings default if no record yet
-  const settingsRows = await db.getAllAsync<any>('SELECT key, value FROM settings');
-  const cfg: Record<string, number> = {};
-  for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
-
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   let cumulative = 0;
   const months: SavingsMonth[] = rows.map(r => {
@@ -468,20 +503,6 @@ export async function getSavingsHistory(): Promise<{ months: SavingsMonth[]; tot
       cumulative,
     };
   });
-
-  // Add current month if not already in list and has default savings set
-  const curM = now.getMonth() + 1;
-  const curY = now.getFullYear();
-  const hasCurrent = rows.some(r => r.month === curM && r.year === curY);
-  if (!hasCurrent && cfg.monthly_savings > 0) {
-    cumulative += cfg.monthly_savings;
-    months.push({
-      month: curM, year: curY,
-      label: `${monthNames[curM - 1]} ${curY}`,
-      savings: cfg.monthly_savings,
-      cumulative,
-    });
-  }
 
   return { months: months.reverse(), total: cumulative };
 }

@@ -7,6 +7,7 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getDashboardDataForMonth, Transaction, deleteTransaction, deleteAllRecurringByCategory,
+  deleteRecurringFuture, deleteRecurringPast,
   autoPopulateRecurring, cascadeOpeningBalances, updateMonthlySavings,
 } from '../src/db/queries';
 import { useTheme } from '../src/theme/useTheme';
@@ -72,14 +73,26 @@ export default function MonthDashboardScreen() {
 
   async function handleDelete(tx: Transaction) {
     if (tx.is_recurring) {
-      Alert.alert('Delete Recurring', 'Delete just this occurrence or all occurrences?', [
+      Alert.alert('Delete Recurring Transaction', 'Which occurrences to delete?', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'This Only', onPress: async () => {
           await deleteTransaction(tx.id);
           setSelectedTx(null);
           reloadAfterDelete();
         }},
-        { text: 'All Occurrences', style: 'destructive', onPress: async () => {
+        { text: 'This & Future', onPress: async () => {
+          if (tx.category_id) await deleteRecurringFuture(tx.category_id, tx.date);
+          else await deleteTransaction(tx.id);
+          setSelectedTx(null);
+          reloadAfterDelete();
+        }},
+        { text: 'This & Past', onPress: async () => {
+          if (tx.category_id) await deleteRecurringPast(tx.category_id, tx.date);
+          else await deleteTransaction(tx.id);
+          setSelectedTx(null);
+          reloadAfterDelete();
+        }},
+        { text: 'All', style: 'destructive', onPress: async () => {
           if (tx.category_id) await deleteAllRecurringByCategory(tx.category_id);
           else await deleteTransaction(tx.id);
           setSelectedTx(null);
@@ -268,6 +281,13 @@ export default function MonthDashboardScreen() {
                 <TxDetailRow label="Recurring" value={selectedTx.is_recurring ? 'Yes 🔁' : 'No'} colors={colors} />
                 {selectedTx.paid_date && <TxDetailRow label="Paid on" value={selectedTx.paid_date} colors={colors} />}
                 <View style={s.modalActions}>
+                  <TouchableOpacity
+                    style={[s.modalBtn, { borderColor: staticColors.primary }]}
+                    onPress={() => { setSelectedTx(null); router.push(`/add-transaction?txId=${selectedTx.id}`); }}
+                  >
+                    <Ionicons name="pencil-outline" size={16} color={staticColors.primary} />
+                    <Text style={[s.modalBtnText, { color: staticColors.primary }]}>Edit</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.danger }]} onPress={() => handleDelete(selectedTx)}>
                     <Ionicons name="trash-outline" size={16} color={staticColors.danger} />
                     <Text style={[s.modalBtnText, { color: staticColors.danger }]}>Delete</Text>

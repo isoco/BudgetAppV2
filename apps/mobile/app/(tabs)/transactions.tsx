@@ -1,10 +1,14 @@
-﻿import { useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, ScrollView } from 'react-native';
+import { useState, useCallback } from 'react';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { getTransactions, deleteTransaction, deleteAllRecurringByCategory, markTransactionPaid, cascadeOpeningBalances, Transaction } from '../../src/db/queries';
+import {
+  getTransactions, deleteTransaction, deleteAllRecurringByCategory,
+  deleteRecurringFuture, deleteRecurringPast,
+  markTransactionPaid, cascadeOpeningBalances, Transaction,
+} from '../../src/db/queries';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
 import { TransactionItem } from '../../src/components/TransactionItem';
@@ -29,6 +33,7 @@ export default function TransactionsScreen() {
   const [loading, setLoading]           = useState(true);
   const [filter, setFilter]             = useState<Filter>('all');
   const [selectedTx, setSelectedTx]     = useState<Transaction | null>(null);
+  const [search, setSearch]             = useState('');
   const now = new Date();
 
   const load = useCallback(async () => {
@@ -48,7 +53,7 @@ export default function TransactionsScreen() {
   async function handleDelete(tx: Transaction) {
     const [y, m] = tx.date.split('-').map(Number);
     if (tx.is_recurring) {
-      Alert.alert('Delete Recurring', 'Delete just this occurrence or all occurrences?', [
+      Alert.alert('Delete Recurring Transaction', 'Which occurrences to delete?', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'This Only', onPress: async () => {
           await deleteTransaction(tx.id);
@@ -56,7 +61,21 @@ export default function TransactionsScreen() {
           setTransactions(prev => prev.filter(t => t.id !== tx.id));
           setSelectedTx(null);
         }},
-        { text: 'All Occurrences', style: 'destructive', onPress: async () => {
+        { text: 'This & Future', onPress: async () => {
+          if (tx.category_id) await deleteRecurringFuture(tx.category_id, tx.date);
+          else await deleteTransaction(tx.id);
+          await cascadeOpeningBalances(m, y);
+          setSelectedTx(null);
+          load();
+        }},
+        { text: 'This & Past', onPress: async () => {
+          if (tx.category_id) await deleteRecurringPast(tx.category_id, tx.date);
+          else await deleteTransaction(tx.id);
+          await cascadeOpeningBalances(m, y);
+          setSelectedTx(null);
+          load();
+        }},
+        { text: 'All', style: 'destructive', onPress: async () => {
           if (tx.category_id) await deleteAllRecurringByCategory(tx.category_id);
           else await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
@@ -77,14 +96,42 @@ export default function TransactionsScreen() {
     }
   }
 
+  // Filter transactions by search query
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? transactions.filter(tx =>
+        (tx.category_name ?? '').toLowerCase().includes(q) ||
+        (tx.merchant ?? '').toLowerCase().includes(q) ||
+        (tx.note ?? '').toLowerCase().includes(q)
+      )
+    : transactions;
+
   const listData: ListItem[] = filter === 'expense'
-    ? groupExpensesByDay(transactions).map(d => ({ type: 'daily', date: d.date, total: d.total }))
-    : transactions.map(tx => ({ type: 'tx', tx }));
+    ? groupExpensesByDay(filtered).map(d => ({ type: 'daily', date: d.date, total: d.total }))
+    : filtered.map(tx => ({ type: 'tx', tx }));
 
   return (
     <View style={[s.container, { backgroundColor: colors.bg }]}>
       <View style={s.header}>
         <Text style={[s.title, { color: colors.text }]}>Transactions</Text>
+      </View>
+
+      {/* Search */}
+      <View style={[s.searchRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Ionicons name="search" size={16} color={colors.textMuted} />
+        <TextInput
+          style={[s.searchInput, { color: colors.text }]}
+          placeholder="Search category, merchant, note…"
+          placeholderTextColor={colors.textMuted}
+          value={search}
+          onChangeText={setSearch}
+          returnKeyType="search"
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')}>
+            <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={s.filters}>
@@ -144,7 +191,13 @@ export default function TransactionsScreen() {
           );
         }}
         contentContainerStyle={s.list}
-        ListEmptyComponent={!loading ? <Text style={[s.empty, { color: colors.textMuted }]}>No transactions this month</Text> : null}
+        ListEmptyComponent={
+          !loading
+            ? <Text style={[s.empty, { color: colors.textMuted }]}>
+                {q ? 'No matches found' : 'No transactions this month'}
+              </Text>
+            : null
+        }
       />
 
       <TouchableOpacity style={s.fab} onPress={() => router.push('/add-transaction')}>
@@ -167,6 +220,13 @@ export default function TransactionsScreen() {
                 <DetailRow label="Recurring" value={selectedTx.is_recurring ? 'Yes 🔁' : 'No'} colors={colors} />
                 {selectedTx.paid_date && <DetailRow label="Paid on" value={selectedTx.paid_date} colors={colors} />}
                 <View style={s.modalActions}>
+                  <TouchableOpacity
+                    style={[s.modalBtn, { borderColor: colors.primary }]}
+                    onPress={() => { setSelectedTx(null); router.push(`/add-transaction?txId=${selectedTx.id}`); }}
+                  >
+                    <Ionicons name="pencil-outline" size={16} color={colors.primary} />
+                    <Text style={[s.modalBtnText, { color: colors.primary }]}>Edit</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.danger }]} onPress={() => handleDelete(selectedTx)}>
                     <Ionicons name="trash-outline" size={16} color={staticColors.danger} />
                     <Text style={[s.modalBtnText, { color: staticColors.danger }]}>Delete</Text>
@@ -198,6 +258,8 @@ const s = StyleSheet.create({
   header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
   title:          { ...typography['2xl'], fontWeight: '700' },
   fab:            { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, backgroundColor: staticColors.primary, justifyContent: 'center', alignItems: 'center', shadowColor: staticColors.primary, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
+  searchRow:      { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginHorizontal: spacing.md, marginBottom: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.md, borderWidth: 1 },
+  searchInput:    { flex: 1, ...typography.sm, padding: 0 },
   filters:        { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
   chip:           { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, borderWidth: 1 },
   chipActive:     { backgroundColor: staticColors.primary, borderColor: staticColors.primary },
@@ -220,5 +282,5 @@ const s = StyleSheet.create({
   detailValue:    { ...typography.sm, fontWeight: '500', flex: 1, textAlign: 'right' },
   modalActions:   { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
   modalBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: spacing.sm, borderRadius: radius.md, borderWidth: 1 },
-  modalBtnText:   { ...typography.sm, fontWeight: '600' },
+  modalBtnText:   { ...typography.xs, fontWeight: '600' },
 });
