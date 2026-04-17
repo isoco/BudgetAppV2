@@ -2,20 +2,32 @@
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Share, Modal } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getSettings, saveSettings, rolloverFromPreviousMonth, exportAllData, importAllData, AppSettings } from '../src/db/queries';
+import * as LocalAuthentication from 'expo-local-authentication';
+import { getSettings, saveSettings, rolloverFromPreviousMonth, exportAllData, importAllData, AppSettings, getCategories, Category } from '../src/db/queries';
 import { useTheme } from '../src/theme/useTheme';
 import { useThemeStore } from '../src/store/themeStore';
 import { colors as staticColors, spacing, radius, typography } from '../src/theme';
 
+const PRIVACY_DEFAULTS: Pick<AppSettings, 'privacy_hide_income' | 'privacy_biometric' | 'privacy_hide_cats'> = {
+  privacy_hide_income: false,
+  privacy_biometric:   false,
+  privacy_hide_cats:   'all',
+};
+
 export default function SettingsScreen() {
   const { colors } = useTheme();
   const { mode, setMode } = useThemeStore();
-  const [settings, setSettings]     = useState<AppSettings>({ daily_limit: 0, monthly_savings: 0, auto_rollover: true, theme: 'dark' });
+  const [settings, setSettings]     = useState<AppSettings>({ daily_limit: 0, monthly_savings: 0, auto_rollover: true, theme: 'dark', ...PRIVACY_DEFAULTS });
   const [dailyLimit, setDailyLimit] = useState('');
   const [savings, setSavings]       = useState('');
   const [saving, setSaving]         = useState(false);
   const [importVisible, setImportVisible] = useState(false);
   const [importJson, setImportJson]       = useState('');
+
+  // Privacy
+  const [incomeCategories, setIncomeCategories] = useState<Category[]>([]);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [catPickerVisible, setCatPickerVisible] = useState(false);
 
   useEffect(() => {
     getSettings().then(s => {
@@ -23,15 +35,20 @@ export default function SettingsScreen() {
       setDailyLimit(s.daily_limit > 0 ? String(s.daily_limit) : '');
       setSavings(s.monthly_savings > 0 ? String(s.monthly_savings) : '');
     });
+    getCategories({ type: 'income' }).then(cats => setIncomeCategories(cats as Category[]));
+    LocalAuthentication.hasHardwareAsync().then(setBiometricAvailable);
   }, []);
 
   async function handleSave() {
     setSaving(true);
     try {
       const updated: Partial<AppSettings> = {
-        daily_limit:     parseFloat(dailyLimit)  || 0,
-        monthly_savings: parseFloat(savings)     || 0,
-        auto_rollover:   settings.auto_rollover,
+        daily_limit:          parseFloat(dailyLimit) || 0,
+        monthly_savings:      parseFloat(savings)    || 0,
+        auto_rollover:        settings.auto_rollover,
+        privacy_hide_income:  settings.privacy_hide_income,
+        privacy_biometric:    settings.privacy_biometric,
+        privacy_hide_cats:    settings.privacy_hide_cats,
       };
       await saveSettings(updated);
       Alert.alert('Saved', 'Settings updated.');
@@ -179,6 +196,65 @@ export default function SettingsScreen() {
 
         <View style={[s.divider, { backgroundColor: colors.border }]} />
 
+        {/* Privacy */}
+        <View style={s.section}>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Privacy</Text>
+          <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Hide income figures on the dashboard. Use the eye icon to reveal them temporarily.</Text>
+
+          <View style={[s.row, { marginBottom: spacing.md }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.rowLabel, { color: colors.text }]}>Hide Income Numbers</Text>
+            </View>
+            <Switch
+              value={settings.privacy_hide_income}
+              onValueChange={v => setSettings(prev => ({ ...prev, privacy_hide_income: v }))}
+              trackColor={{ true: staticColors.primary }}
+              thumbColor="#fff"
+            />
+          </View>
+
+          {settings.privacy_hide_income && (
+            <>
+              {biometricAvailable && (
+                <View style={[s.row, { marginBottom: spacing.md }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.rowLabel, { color: colors.text }]}>Require Biometric to Unlock</Text>
+                    <Text style={[s.rowDesc, { color: colors.textMuted }]}>Fingerprint / Face ID</Text>
+                  </View>
+                  <Switch
+                    value={settings.privacy_biometric}
+                    onValueChange={v => setSettings(prev => ({ ...prev, privacy_biometric: v }))}
+                    trackColor={{ true: staticColors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              )}
+
+              <Text style={[s.rowLabel, { color: colors.text, marginBottom: spacing.xs }]}>Which income to hide:</Text>
+              <View style={[s.row, { gap: spacing.sm, marginBottom: spacing.sm }]}>
+                <TouchableOpacity
+                  style={[s.optionBtn, { borderColor: settings.privacy_hide_cats === 'all' ? staticColors.primary : colors.border, backgroundColor: settings.privacy_hide_cats === 'all' ? staticColors.primary + '22' : colors.surface }]}
+                  onPress={() => setSettings(prev => ({ ...prev, privacy_hide_cats: 'all' }))}
+                >
+                  <Text style={[s.optionBtnText, { color: settings.privacy_hide_cats === 'all' ? staticColors.primary : colors.textMuted }]}>All Income</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.optionBtn, { borderColor: settings.privacy_hide_cats !== 'all' ? staticColors.primary : colors.border, backgroundColor: settings.privacy_hide_cats !== 'all' ? staticColors.primary + '22' : colors.surface }]}
+                  onPress={() => setCatPickerVisible(true)}
+                >
+                  <Text style={[s.optionBtnText, { color: settings.privacy_hide_cats !== 'all' ? staticColors.primary : colors.textMuted }]}>
+                    {settings.privacy_hide_cats === 'all' || !settings.privacy_hide_cats
+                      ? 'Choose Categories'
+                      : `${settings.privacy_hide_cats.split(',').filter(Boolean).length} selected`}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+
+        <View style={[s.divider, { backgroundColor: colors.border }]} />
+
         {/* Manage Categories */}
         <TouchableOpacity style={[s.linkRow, { borderBottomColor: colors.border }]} onPress={() => router.push('/manage-categories')}>
           <Text style={[s.linkText, { color: colors.text }]}>Manage Categories</Text>
@@ -206,6 +282,40 @@ export default function SettingsScreen() {
           <Text style={s.saveBtnText}>{saving ? 'Saving…' : 'Save Settings'}</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Category Picker Modal */}
+      <Modal visible={catPickerVisible} animationType="slide" transparent>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { backgroundColor: colors.surface }]}>
+            <Text style={[s.modalTitle, { color: colors.text }]}>Select Income Categories to Hide</Text>
+            <ScrollView style={{ maxHeight: 300, marginBottom: spacing.md }}>
+              {incomeCategories.map(c => {
+                const selected = settings.privacy_hide_cats !== 'all' &&
+                  settings.privacy_hide_cats.split(',').includes(c.id);
+                return (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[s.catPickerRow, { borderBottomColor: colors.border }]}
+                    onPress={() => {
+                      const current = settings.privacy_hide_cats === 'all' ? [] : settings.privacy_hide_cats.split(',').filter(Boolean);
+                      const next = selected ? current.filter(id => id !== c.id) : [...current, c.id];
+                      setSettings(prev => ({ ...prev, privacy_hide_cats: next.join(',') || '' }));
+                    }}
+                  >
+                    <Ionicons name={selected ? 'checkbox' : 'square-outline'} size={22} color={selected ? staticColors.primary : colors.textMuted} />
+                    <Text style={[s.catPickerLabel, { color: colors.text }]}>{c.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <View style={s.modalActions}>
+              <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.primary, backgroundColor: staticColors.primary }]} onPress={() => setCatPickerVisible(false)}>
+                <Text style={[s.modalBtnText, { color: '#fff' }]}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Import Modal */}
       <Modal visible={importVisible} animationType="slide" transparent>
@@ -258,6 +368,12 @@ const s = StyleSheet.create({
   themeBtnText:    { ...typography.sm, fontWeight: '500' },
   linkRow:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.md },
   linkText:        { ...typography.base, fontWeight: '500' },
+  rowLabel:        { ...typography.base, fontWeight: '500' },
+  rowDesc:         { ...typography.xs, marginTop: 2 },
+  optionBtn:       { flex: 1, borderWidth: 1, borderRadius: radius.md, paddingVertical: spacing.sm, alignItems: 'center' },
+  optionBtnText:   { ...typography.sm, fontWeight: '600' },
+  catPickerRow:    { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: 1 },
+  catPickerLabel:  { ...typography.base },
   modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalBox:        { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: 40 },
   modalTitle:      { ...typography.lg, fontWeight: '700', marginBottom: spacing.md },

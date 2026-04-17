@@ -105,6 +105,18 @@ else
   echo "  ✗ daily-tracker.tsx — MISSING expenses list! Sync failed."
   exit 1
 fi
+if grep -q "viewMonth" "$WSL_DST/apps/mobile/app/(tabs)/index.tsx"; then
+  echo "  ✔ index.tsx — month navigation present"
+else
+  echo "  ✗ index.tsx — MISSING month navigation! Sync failed."
+  exit 1
+fi
+if grep -q "privacy_hide_income" "$WSL_DST/apps/mobile/app/settings.tsx"; then
+  echo "  ✔ settings.tsx — privacy settings present"
+else
+  echo "  ✗ settings.tsx — MISSING privacy settings! Sync failed."
+  exit 1
+fi
 
 # ─── 2. Install deps ──────────────────────────────────────────────────────────
 echo "▶ Installing dependencies..."

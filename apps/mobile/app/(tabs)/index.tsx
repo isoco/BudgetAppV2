@@ -1,12 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   ScrollView, View, Text, StyleSheet, RefreshControl,
-  TouchableOpacity, Modal, TextInput, Alert, FlatList,
+  TouchableOpacity, Modal, TextInput, Alert, FlatList, PanResponder,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
+import * as LocalAuthentication from 'expo-local-authentication';
 import {
   getDashboardData, getSettings,
   getUpcomingBills, getUpcomingIncome, getEndOfMonthProjection,
@@ -36,8 +37,90 @@ const daysThisMonth = () => {
 export default function DashboardScreen() {
   const { colors } = useTheme();
 
+  // ── month navigation ──────────────────────────────────────────────────────
+  const now = new Date();
+  const [viewMonth, setViewMonth] = useState(now.getMonth() + 1);
+  const [viewYear,  setViewYear]  = useState(now.getFullYear());
+  const isCurrentMonth = viewMonth === (now.getMonth() + 1) && viewYear === now.getFullYear();
+
+  function prevMonth() {
+    if (viewMonth === 1) { setViewYear(y => y - 1); setViewMonth(12); }
+    else setViewMonth(m => m - 1);
+  }
+  function nextMonth() {
+    // Don't go beyond current month
+    if (isCurrentMonth) return;
+    if (viewMonth === 12) { setViewYear(y => y + 1); setViewMonth(1); }
+    else setViewMonth(m => m + 1);
+  }
+
+  // Swipe gesture for month nav
+  const swipeRef = useRef({ startX: 0 });
+  const panResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 15 && Math.abs(g.dy) < 30,
+    onPanResponderGrant: (_, g) => { swipeRef.current.startX = g.x0; },
+    onPanResponderRelease: (_, g) => {
+      if (g.dx < -50) nextMonthRef.current?.();
+      else if (g.dx > 50) prevMonthRef.current?.();
+    },
+  })).current;
+
+  // Refs to avoid stale closure in PanResponder
+  const prevMonthRef = useRef(prevMonth);
+  const nextMonthRef = useRef(nextMonth);
+  useEffect(() => { prevMonthRef.current = prevMonth; nextMonthRef.current = nextMonth; });
+
+  // ── privacy ───────────────────────────────────────────────────────────────
+  const [privacyEnabled,  setPrivacyEnabled]  = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [hideCats,        setHideCats]        = useState('all'); // 'all' or comma-sep cat IDs
+  const [isLocked,        setIsLocked]        = useState(true); // locked = numbers hidden
+
+  const loadPrivacy = useCallback(async () => {
+    const s = await getSettings();
+    setPrivacyEnabled(s.privacy_hide_income);
+    setBiometricEnabled(s.privacy_biometric);
+    setHideCats(s.privacy_hide_cats ?? 'all');
+    setIsLocked(true); // always start locked on focus
+  }, []);
+
+  async function handleLockToggle() {
+    if (!isLocked) {
+      setIsLocked(true);
+      return;
+    }
+    // Unlock
+    if (biometricEnabled) {
+      const supported = await LocalAuthentication.hasHardwareAsync();
+      if (supported) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Unlock income figures',
+          fallbackLabel: 'Use passcode',
+        });
+        if (result.success) setIsLocked(false);
+        return;
+      }
+    }
+    setIsLocked(false);
+  }
+
+  // Mask a value based on privacy settings
+  function masked(value: string, isIncome: boolean, categoryId?: string): string {
+    if (!privacyEnabled || !isLocked) return value;
+    if (!isIncome) return value;
+    if (hideCats === 'all') return '€ ••••';
+    const cats = hideCats.split(',').filter(Boolean);
+    if (!categoryId || !cats.includes(categoryId)) return value;
+    return '€ ••••';
+  }
+  function incomeHidden(): boolean {
+    return privacyEnabled && isLocked;
+  }
+
   // ── data ──────────────────────────────────────────────────────────────────
-  const { data, loading, refetch }                           = useQuery(getDashboardData);
+  const dashFetcher = useCallback(() => getDashboardData({ month: viewMonth, year: viewYear }), [viewMonth, viewYear]);
+  const { data, loading, refetch }                           = useQuery(dashFetcher);
   const { data: projection, refetch: refetchProj }           = useQuery(getEndOfMonthProjection);
   const { data: bills = [], refetch: refetchBills }          = useQuery(getUpcomingBills);
   const { data: income_items = [], refetch: refetchIncome }  = useQuery(getUpcomingIncome);
@@ -68,10 +151,8 @@ export default function DashboardScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => {
-    const now = new Date();
     const y = now.getFullYear();
     const m = now.getMonth() + 1;
-    // Catch up current + last 2 months in case recurring was set up late
     autoPopulateRecurring(y, m).then(() => {
       const prev1 = new Date(y, m - 2, 1);
       return autoPopulateRecurring(prev1.getFullYear(), prev1.getMonth() + 1);
@@ -86,7 +167,11 @@ export default function DashboardScreen() {
       refetchSavings();
     });
     loadDaySpends(todayStr());
-  }, [refetch, refetchProj, refetchBills, refetchIncome, loadDaySpends]));
+    loadPrivacy();
+  }, [refetch, refetchProj, refetchBills, refetchIncome, loadDaySpends, loadPrivacy]));
+
+  // Refetch when month changes
+  useEffect(() => { refetch(); }, [viewMonth, viewYear]);
 
   async function handleAddSpend() {
     const num = parseFloat(spendAmount);
@@ -142,20 +227,36 @@ export default function DashboardScreen() {
     ? 'Today'
     : new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
+  const viewMonthLabel = new Date(viewYear, viewMonth - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
   return (
     <ScrollView
       style={[s.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={s.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} tintColor={staticColors.primary} />}
       keyboardShouldPersistTaps="handled"
+      {...panResponder.panHandlers}
     >
-      {/* Header — single calendar icon (month-history list view) */}
+      {/* Header */}
       <View style={s.header}>
-        <View>
-          <Text style={[s.title, { color: colors.text }]}>Budget</Text>
-          <Text style={[s.subtitle, { color: colors.textMuted }]}>{new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</Text>
+        <View style={s.monthNav}>
+          <TouchableOpacity onPress={prevMonth} style={s.navArrow}>
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
+          </TouchableOpacity>
+          <View>
+            <Text style={[s.title, { color: colors.text }]}>Budget</Text>
+            <Text style={[s.subtitle, { color: colors.textMuted }]}>{viewMonthLabel}</Text>
+          </View>
+          <TouchableOpacity onPress={nextMonth} style={[s.navArrow, isCurrentMonth && { opacity: 0.3 }]}>
+            <Ionicons name="chevron-forward" size={20} color={colors.text} />
+          </TouchableOpacity>
         </View>
         <View style={s.headerRight}>
+          {privacyEnabled && (
+            <TouchableOpacity style={[s.iconBtn, { backgroundColor: colors.surface }]} onPress={handleLockToggle}>
+              <Ionicons name={isLocked ? 'eye-off' : 'eye'} size={20} color={isLocked ? staticColors.warning : colors.textMuted} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={[s.iconBtn, { backgroundColor: colors.surface }]} onPress={() => router.push('/month-history')}>
             <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
           </TouchableOpacity>
@@ -165,7 +266,7 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* Balance Card — tappable */}
+      {/* Balance Card */}
       <TouchableOpacity style={s.balanceCard} onPress={openBalanceModal} activeOpacity={0.85}>
         {(data?.opening_balance ?? 0) !== 0 && (
           <Text style={s.rolloverLabel}>
@@ -174,14 +275,18 @@ export default function DashboardScreen() {
         )}
         <Text style={s.balanceLabel}>Available Balance  <Text style={{ fontSize: 11, opacity: 0.6 }}>tap for details</Text></Text>
         <Text style={[s.balanceAmount, (data?.available ?? 0) < 0 && { color: '#fca5a5' }]}>
-          {sign(data?.available ?? 0)}{fmt(data?.available ?? 0)}
+          {incomeHidden() ? '€ ••••' : `${sign(data?.available ?? 0)}${fmt(data?.available ?? 0)}`}
         </Text>
         <View style={s.balanceRow}>
-          <StatChip icon="arrow-down-circle" label="Income"   value={fmt(data?.income?.this_month ?? 0)}  color={staticColors.success} />
+          <StatChip icon="arrow-down-circle" label="Income"
+            value={incomeHidden() ? '€ ••••' : fmt(data?.income?.this_month ?? 0)}
+            color={staticColors.success} />
           <View style={s.statDivider} />
-          <StatChip icon="arrow-up-circle"   label="Expenses" value={fmt(data?.expense?.this_month ?? 0)} color={staticColors.danger} />
+          <StatChip icon="arrow-up-circle" label="Expenses" value={fmt(data?.expense?.this_month ?? 0)} color={staticColors.danger} />
           <View style={s.statDivider} />
-          <StatChip icon="trending-up" label="Net" value={`${sign(data?.balance ?? 0)}${fmt(data?.balance ?? 0)}`} color={(data?.balance ?? 0) >= 0 ? staticColors.success : staticColors.danger} />
+          <StatChip icon="trending-up" label="Net"
+            value={incomeHidden() ? '€ ••••' : `${sign(data?.balance ?? 0)}${fmt(data?.balance ?? 0)}`}
+            color={(data?.balance ?? 0) >= 0 ? staticColors.success : staticColors.danger} />
         </View>
       </TouchableOpacity>
 
@@ -191,112 +296,114 @@ export default function DashboardScreen() {
           <View style={[s.halfCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[s.projLabel, { color: colors.textMuted }]}>Month leftover</Text>
             <Text style={[s.projAmount, { color: (projection.projected_balance ?? 0) >= 0 ? staticColors.success : staticColors.danger }]}>
-              {sign(projection.projected_balance ?? 0)}{fmt(projection.projected_balance ?? 0)}
+              {incomeHidden() ? '€ ••••' : `${sign(projection.projected_balance ?? 0)}${fmt(projection.projected_balance ?? 0)}`}
             </Text>
             <Text style={[s.projDays, { color: colors.textSubtle }]}>{projection.days_left}d left</Text>
           </View>
         )}
         <View style={[s.halfCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[s.projLabel, { color: colors.textMuted }]}>Savings</Text>
-          <Text style={[s.projAmount, { color: staticColors.warning }]}>{fmt(savingsSummary?.this_month ?? 0)}</Text>
-          <Text style={[s.projDays, { color: colors.textSubtle }]}>Total: {fmt(savingsSummary?.total ?? 0)}</Text>
+          <Text style={[s.projAmount, { color: staticColors.warning }]}>
+            {incomeHidden() ? '€ ••••' : fmt(savingsSummary?.this_month ?? 0)}
+          </Text>
+          <Text style={[s.projDays, { color: colors.textSubtle }]}>
+            Total: {incomeHidden() ? '••••' : fmt(savingsSummary?.total ?? 0)}
+          </Text>
         </View>
       </View>
 
-      {/* ── Daily Log (merged with today's spending) ──────────────────── */}
-      <View style={[s.dailyLogCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <View style={s.dailyLogHeader}>
-          <TouchableOpacity onPress={() => router.push('/daily-tracker')} activeOpacity={0.7}>
-            <Text style={[s.sectionTitle, { color: colors.text }]}>
-              Daily Log  <Text style={{ fontSize: 12, color: staticColors.primary }}>view all →</Text>
-            </Text>
-          </TouchableOpacity>
-          {/* Today's spending summary — tap to view transactions */}
-          {daily && daily.limit > 0 && selectedDate === todayStr() && (
-            <TouchableOpacity
-              onPress={openTodayModal}
-              style={[s.todayBadge, { backgroundColor: dailyOver ? `${staticColors.danger}22` : colors.surfaceHigh, borderColor: dailyOver ? staticColors.danger : colors.border }]}
-            >
-              <Text style={[s.todayBadgeText, { color: dailyOver ? staticColors.danger : colors.text }]}>
-                {fmt(daily.spent)} / {fmt(daily.limit)}
+      {/* Daily Log — only show for current month */}
+      {isCurrentMonth && (
+        <View style={[s.dailyLogCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={s.dailyLogHeader}>
+            <TouchableOpacity onPress={() => router.push('/daily-tracker')} activeOpacity={0.7}>
+              <Text style={[s.sectionTitle, { color: colors.text }]}>
+                Daily Log  <Text style={{ fontSize: 12, color: staticColors.primary }}>view all →</Text>
               </Text>
-              {dailyOver
-                ? <Text style={[s.todayOverText, { color: staticColors.danger }]}>over</Text>
-                : <Text style={[s.todayOverText, { color: staticColors.success }]}>{fmt(daily.remaining)} left</Text>
-              }
             </TouchableOpacity>
+            {daily && daily.limit > 0 && selectedDate === todayStr() && (
+              <TouchableOpacity
+                onPress={openTodayModal}
+                style={[s.todayBadge, { backgroundColor: dailyOver ? `${staticColors.danger}22` : colors.surfaceHigh, borderColor: dailyOver ? staticColors.danger : colors.border }]}
+              >
+                <Text style={[s.todayBadgeText, { color: dailyOver ? staticColors.danger : colors.text }]}>
+                  {fmt(daily.spent)} / {fmt(daily.limit)}
+                </Text>
+                {dailyOver
+                  ? <Text style={[s.todayOverText, { color: staticColors.danger }]}>over</Text>
+                  : <Text style={[s.todayOverText, { color: staticColors.success }]}>{fmt(daily.remaining)} left</Text>
+                }
+              </TouchableOpacity>
+            )}
+          </View>
+          {daily && daily.limit > 0 && selectedDate === todayStr() && (
+            <View style={[s.track, { backgroundColor: colors.surfaceHigh, marginBottom: spacing.sm }]}>
+              <View style={[s.trackBar, {
+                width: `${dailyPct}%` as any,
+                backgroundColor: dailyOver ? staticColors.danger : dailyPct > 80 ? staticColors.warning : staticColors.success,
+              }]} />
+            </View>
+          )}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
+            {days7.map(d => {
+              const isSelected = d === selectedDate;
+              const label = d === todayStr() ? 'Today' : new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
+              return (
+                <TouchableOpacity
+                  key={d}
+                  style={[s.datePill, { borderColor: isSelected ? staticColors.primary : colors.border, backgroundColor: isSelected ? staticColors.primary : colors.surfaceHigh }]}
+                  onPress={() => { setSelectedDate(d); loadDaySpends(d); }}
+                >
+                  <Text style={[s.datePillText, { color: isSelected ? '#fff' : colors.textMuted }]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {daySpendTotal > 0 && (
+            <Text style={[s.dayTotal, { color: colors.textMuted }]}>{selectedDateLabel}: <Text style={{ color: staticColors.danger, fontWeight: '700' }}>{fmt(daySpendTotal)}</Text></Text>
+          )}
+
+          <View style={s.addSpendRow}>
+            <TextInput
+              style={[s.spendInput, { backgroundColor: colors.surfaceHigh, color: colors.text, borderColor: colors.border }]}
+              placeholder="€ Amount"
+              placeholderTextColor={colors.textSubtle}
+              keyboardType="decimal-pad"
+              value={spendAmount}
+              onChangeText={setSpendAmount}
+            />
+            <TextInput
+              style={[s.spendNoteInput, { backgroundColor: colors.surfaceHigh, color: colors.text, borderColor: colors.border }]}
+              placeholder="What for?"
+              placeholderTextColor={colors.textSubtle}
+              value={spendNote}
+              onChangeText={setSpendNote}
+            />
+            <TouchableOpacity style={[s.spendAddBtn, { backgroundColor: staticColors.primary }]} onPress={handleAddSpend}>
+              <Ionicons name="add" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {daySpends.map(entry => (
+            <View key={entry.id} style={[s.spendEntry, { borderBottomColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.spendEntryAmount, { color: staticColors.danger }]}>{fmt(entry.amount)}</Text>
+                {entry.note && <Text style={[s.spendEntryNote, { color: colors.textMuted }]}>{entry.note}</Text>}
+              </View>
+              <Text style={[s.spendEntryTime, { color: colors.textSubtle }]}>
+                {new Date(entry.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+              <TouchableOpacity onPress={() => handleDeleteSpend(entry.id)} style={{ paddingLeft: spacing.sm }}>
+                <Ionicons name="trash-outline" size={16} color={colors.textSubtle} />
+              </TouchableOpacity>
+            </View>
+          ))}
+          {daySpends.length === 0 && (
+            <Text style={[s.emptySmall, { color: colors.textSubtle }]}>No entries for {selectedDateLabel.toLowerCase()}</Text>
           )}
         </View>
-        {daily && daily.limit > 0 && selectedDate === todayStr() && (
-          <View style={[s.track, { backgroundColor: colors.surfaceHigh, marginBottom: spacing.sm }]}>
-            <View style={[s.trackBar, {
-              width: `${dailyPct}%` as any,
-              backgroundColor: dailyOver ? staticColors.danger : dailyPct > 80 ? staticColors.warning : staticColors.success,
-            }]} />
-          </View>
-        )}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
-          {days7.map(d => {
-            const isSelected = d === selectedDate;
-            const label = d === todayStr() ? 'Today' : new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
-            return (
-              <TouchableOpacity
-                key={d}
-                style={[s.datePill, { borderColor: isSelected ? staticColors.primary : colors.border, backgroundColor: isSelected ? staticColors.primary : colors.surfaceHigh }]}
-                onPress={() => { setSelectedDate(d); loadDaySpends(d); }}
-              >
-                <Text style={[s.datePillText, { color: isSelected ? '#fff' : colors.textMuted }]}>{label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* Total for selected day */}
-        {daySpendTotal > 0 && (
-          <Text style={[s.dayTotal, { color: colors.textMuted }]}>{selectedDateLabel}: <Text style={{ color: staticColors.danger, fontWeight: '700' }}>{fmt(daySpendTotal)}</Text></Text>
-        )}
-
-        {/* Quick add row */}
-        <View style={s.addSpendRow}>
-          <TextInput
-            style={[s.spendInput, { backgroundColor: colors.surfaceHigh, color: colors.text, borderColor: colors.border }]}
-            placeholder="€ Amount"
-            placeholderTextColor={colors.textSubtle}
-            keyboardType="decimal-pad"
-            value={spendAmount}
-            onChangeText={setSpendAmount}
-          />
-          <TextInput
-            style={[s.spendNoteInput, { backgroundColor: colors.surfaceHigh, color: colors.text, borderColor: colors.border }]}
-            placeholder="What for?"
-            placeholderTextColor={colors.textSubtle}
-            value={spendNote}
-            onChangeText={setSpendNote}
-          />
-          <TouchableOpacity style={[s.spendAddBtn, { backgroundColor: staticColors.primary }]} onPress={handleAddSpend}>
-            <Ionicons name="add" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Today's entries */}
-        {daySpends.map(entry => (
-          <View key={entry.id} style={[s.spendEntry, { borderBottomColor: colors.border }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.spendEntryAmount, { color: staticColors.danger }]}>{fmt(entry.amount)}</Text>
-              {entry.note && <Text style={[s.spendEntryNote, { color: colors.textMuted }]}>{entry.note}</Text>}
-            </View>
-            <Text style={[s.spendEntryTime, { color: colors.textSubtle }]}>
-              {new Date(entry.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-            <TouchableOpacity onPress={() => handleDeleteSpend(entry.id)} style={{ paddingLeft: spacing.sm }}>
-              <Ionicons name="trash-outline" size={16} color={colors.textSubtle} />
-            </TouchableOpacity>
-          </View>
-        ))}
-        {daySpends.length === 0 && (
-          <Text style={[s.emptySmall, { color: colors.textSubtle }]}>No entries for {selectedDateLabel.toLowerCase()}</Text>
-        )}
-      </View>
+      )}
 
       {/* Quick Links */}
       <View style={s.quickRow}>
@@ -341,7 +448,9 @@ export default function DashboardScreen() {
                 <Text style={[s.upcomingName, { color: colors.text }]}>{item.name}</Text>
                 <Text style={[s.upcomingDate, { color: colors.textMuted }]}>{item.due_date}</Text>
               </View>
-              <Text style={[s.upcomingAmount, { color: staticColors.success }]}>{fmt(item.default_amount)}</Text>
+              <Text style={[s.upcomingAmount, { color: staticColors.success }]}>
+                {incomeHidden() ? '€ ••••' : fmt(item.default_amount)}
+              </Text>
             </View>
           ))}
         </View>
@@ -391,7 +500,9 @@ export default function DashboardScreen() {
                 <View style={s.modalTotals}>
                   <View style={s.modalTotalItem}>
                     <Text style={[s.modalTotalLabel, { color: colors.textMuted }]}>Income</Text>
-                    <Text style={[s.modalTotalValue, { color: staticColors.success }]}>{fmt(balanceData.totalIncome)}</Text>
+                    <Text style={[s.modalTotalValue, { color: staticColors.success }]}>
+                      {incomeHidden() ? '€ ••••' : fmt(balanceData.totalIncome)}
+                    </Text>
                   </View>
                   <View style={s.modalTotalItem}>
                     <Text style={[s.modalTotalLabel, { color: colors.textMuted }]}>Expenses</Text>
@@ -406,9 +517,7 @@ export default function DashboardScreen() {
                   keyExtractor={t => t.id}
                   style={{ maxHeight: 400 }}
                   ListHeaderComponent={
-                    <>
-                      {balanceData.income.length > 0 && <Text style={[s.modalSectionLabel, { color: staticColors.success }]}>INCOME</Text>}
-                    </>
+                    <>{balanceData.income.length > 0 && <Text style={[s.modalSectionLabel, { color: staticColors.success }]}>INCOME</Text>}</>
                   }
                   renderItem={({ item }: { item: any }) => (
                     <>
@@ -424,7 +533,9 @@ export default function DashboardScreen() {
                           <Text style={[s.modalTxDate, { color: colors.textSubtle }]}>{item.date}</Text>
                         </View>
                         <Text style={[s.modalTxAmount, { color: item._section === 'income' ? staticColors.success : staticColors.danger }]}>
-                          {item._section === 'income' ? '+' : '-'}{fmt(item.amount)}
+                          {item._section === 'income' && incomeHidden()
+                            ? '€ ••••'
+                            : `${item._section === 'income' ? '+' : '-'}${fmt(item.amount)}`}
                         </Text>
                       </View>
                     </>
@@ -462,7 +573,7 @@ export default function DashboardScreen() {
                       )}
                     </View>
                     <Text style={[s.modalTxAmount, { color: item.type === 'income' ? staticColors.success : staticColors.danger }]}>
-                      {item.type === 'income' ? '+' : '-'}{fmt(item.amount)}
+                      {item.type === 'income' && incomeHidden() ? '€ ••••' : `${item.type === 'income' ? '+' : '-'}${fmt(item.amount)}`}
                     </Text>
                   </View>
                 )}
@@ -541,6 +652,8 @@ const s = StyleSheet.create({
   container:         { flex: 1 },
   content:           { padding: spacing.md, paddingBottom: 100 },
   header:            { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg, paddingTop: spacing.xl },
+  monthNav:          { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  navArrow:          { padding: 4 },
   title:             { ...typography['2xl'], fontWeight: '700' },
   subtitle:          { ...typography.sm, marginTop: 2 },
   headerRight:       { flexDirection: 'row', gap: spacing.sm },
@@ -589,7 +702,6 @@ const s = StyleSheet.create({
   seeAll:            { ...typography.sm, color: staticColors.primary },
   empty:             { ...typography.sm, textAlign: 'center', marginTop: spacing.md },
   fab:               { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, backgroundColor: staticColors.primary, justifyContent: 'center', alignItems: 'center', shadowColor: staticColors.primary, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
-  // modals
   modalOverlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalSheet:        { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: 40, maxHeight: '85%' },
   modalHeaderRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },

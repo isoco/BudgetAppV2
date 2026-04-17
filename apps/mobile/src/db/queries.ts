@@ -780,16 +780,16 @@ export async function getSavingsSummary(): Promise<{ total: number; this_month: 
 
 // ─── Insights / Dashboard ─────────────────────────────────────────────────────
 
-export async function getDashboardData() {
+export async function getDashboardData(opts?: { month?: number; year?: number }) {
   const db  = await getDb();
   const now = new Date();
-  const m   = now.getMonth() + 1;
-  const y   = now.getFullYear();
+  const m   = opts?.month ?? (now.getMonth() + 1);
+  const y   = opts?.year  ?? now.getFullYear();
   const thisMonth    = `${y}-${String(m).padStart(2, '0')}`;
   const lastMonthDt  = new Date(y, m - 2, 1);
   const lastMonthStr = `${lastMonthDt.getFullYear()}-${String(lastMonthDt.getMonth() + 1).padStart(2, '0')}`;
 
-  // Ensure opening balance is computed for current month
+  // Ensure opening balance is computed for requested month
   const openingBalance = await computeMonthOpening(m, y);
 
   const [totals, cats, recent, mbRows, settings] = await Promise.all([
@@ -822,7 +822,8 @@ export async function getDashboardData() {
   const expenseLast = t.expense_last  ?? 0;
   const spentToday  = t.spent_today   ?? 0;
   const daysInMonth = new Date(y, m, 0).getDate();
-  const daysLeft    = Math.max(1, daysInMonth - now.getDate());
+  const isCurMonth  = y === now.getFullYear() && m === (now.getMonth() + 1);
+  const daysLeft    = isCurMonth ? Math.max(1, daysInMonth - now.getDate()) : 1;
 
   const cfg: Record<string, number | string> = {};
   for (const row of settings) cfg[row.key] = row.value;
@@ -901,10 +902,13 @@ function pct(a: number, b: number) {
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 export interface AppSettings {
-  daily_limit:      number;
-  monthly_savings:  number;
-  auto_rollover:    boolean;
-  theme:            'dark' | 'light' | 'system';
+  daily_limit:           number;
+  monthly_savings:       number;
+  auto_rollover:         boolean;
+  theme:                 'dark' | 'light' | 'system';
+  privacy_hide_income:   boolean;
+  privacy_biometric:     boolean;
+  privacy_hide_cats:     string; // comma-separated category IDs, or 'all'
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -912,20 +916,26 @@ export async function getSettings(): Promise<AppSettings> {
   const rows = await db.getAllAsync<{ key: string; value: string }>('SELECT key, value FROM settings');
   const map  = Object.fromEntries(rows.map(r => [r.key, r.value]));
   return {
-    daily_limit:     parseFloat(map.daily_limit    || '0'),
-    monthly_savings: parseFloat(map.monthly_savings || '0'),
-    auto_rollover:   (map.auto_rollover || '1') === '1',
-    theme:           (map.theme as any) || 'dark',
+    daily_limit:           parseFloat(map.daily_limit    || '0'),
+    monthly_savings:       parseFloat(map.monthly_savings || '0'),
+    auto_rollover:         (map.auto_rollover || '1') === '1',
+    theme:                 (map.theme as any) || 'dark',
+    privacy_hide_income:   (map.privacy_hide_income || '0') === '1',
+    privacy_biometric:     (map.privacy_biometric   || '0') === '1',
+    privacy_hide_cats:     map.privacy_hide_cats ?? 'all',
   };
 }
 
 export async function saveSettings(s: Partial<AppSettings>): Promise<void> {
   const db = await getDb();
   const entries: [string, string][] = [];
-  if (s.daily_limit     !== undefined) entries.push(['daily_limit',     String(s.daily_limit)]);
-  if (s.monthly_savings !== undefined) entries.push(['monthly_savings', String(s.monthly_savings)]);
-  if (s.auto_rollover   !== undefined) entries.push(['auto_rollover',   s.auto_rollover ? '1' : '0']);
-  if (s.theme           !== undefined) entries.push(['theme',           s.theme]);
+  if (s.daily_limit           !== undefined) entries.push(['daily_limit',           String(s.daily_limit)]);
+  if (s.monthly_savings       !== undefined) entries.push(['monthly_savings',       String(s.monthly_savings)]);
+  if (s.auto_rollover         !== undefined) entries.push(['auto_rollover',         s.auto_rollover ? '1' : '0']);
+  if (s.theme                 !== undefined) entries.push(['theme',                 s.theme]);
+  if (s.privacy_hide_income   !== undefined) entries.push(['privacy_hide_income',   s.privacy_hide_income ? '1' : '0']);
+  if (s.privacy_biometric     !== undefined) entries.push(['privacy_biometric',     s.privacy_biometric ? '1' : '0']);
+  if (s.privacy_hide_cats     !== undefined) entries.push(['privacy_hide_cats',     s.privacy_hide_cats]);
   for (const [k, v] of entries) {
     await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)', [k, v]);
   }
