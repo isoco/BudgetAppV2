@@ -792,14 +792,13 @@ export async function getDashboardData(opts?: { month?: number; year?: number })
   // Ensure opening balance is computed for requested month
   const openingBalance = await computeMonthOpening(m, y);
 
-  const [totals, cats, recent, mbRows, settings] = await Promise.all([
+  const [totals, cats, recent, mbRows, settings, spendTodayRows] = await Promise.all([
     db.getAllAsync<any>(`
       SELECT
         SUM(CASE WHEN type='income'  AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS income_this,
         SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS expense_this,
         SUM(CASE WHEN type='income'  AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS income_last,
-        SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS expense_last,
-        SUM(CASE WHEN type='expense' AND date=date('now') AND is_recurring=0 THEN amount ELSE 0 END) AS spent_today
+        SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS expense_last
       FROM transactions`,
       [thisMonth, thisMonth, lastMonthStr, lastMonthStr]
     ),
@@ -813,6 +812,7 @@ export async function getDashboardData(opts?: { month?: number; year?: number })
     db.getAllAsync<Transaction>(`${TX_SELECT} ORDER BY t.date DESC, t.created_at DESC LIMIT 5`),
     db.getAllAsync<any>('SELECT * FROM month_balances WHERE month=? AND year=?', [m, y]),
     db.getAllAsync<any>('SELECT key, value FROM settings'),
+    db.getAllAsync<{ total: number }>("SELECT COALESCE(SUM(amount),0) AS total FROM daily_spends WHERE date = date('now')"),
   ]);
 
   const t           = totals[0];
@@ -820,7 +820,7 @@ export async function getDashboardData(opts?: { month?: number; year?: number })
   const expenseThis = t.expense_this  ?? 0;
   const incomeLast  = t.income_last   ?? 0;
   const expenseLast = t.expense_last  ?? 0;
-  const spentToday  = t.spent_today   ?? 0;
+  const spentToday  = spendTodayRows[0]?.total ?? 0;
   const daysInMonth = new Date(y, m, 0).getDate();
   const isCurMonth  = y === now.getFullYear() && m === (now.getMonth() + 1);
   const daysLeft    = isCurMonth ? Math.max(1, daysInMonth - now.getDate()) : 1;
@@ -1091,6 +1091,7 @@ export async function getMonthDetail(month: number, year: number): Promise<{
 export async function getMonthHistory(pastMonths = 3, futureMonths = 12): Promise<{
   label: string; income: number; expense: number; savings: number;
   opening: number; closing: number; month: number; year: number;
+  expense_fuel: number; expense_daily: number; expense_bills: number; expense_other: number;
 }[]> {
   const db  = await getDb();
   const now = new Date();
@@ -1111,21 +1112,36 @@ export async function getMonthHistory(pastMonths = 3, futureMonths = 12): Promis
       db.getAllAsync<any>(`
         SELECT
           COALESCE(SUM(CASE WHEN type='income'  THEN amount ELSE 0 END),0) AS income,
-          COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense
-        FROM transactions WHERE strftime('%Y-%m', date) = ?`, [key]
+          COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense,
+          COALESCE(SUM(CASE WHEN type='expense' AND t.id IN (
+            SELECT transaction_id FROM fuel_entries WHERE transaction_id IS NOT NULL AND strftime('%Y-%m', date) = ?
+          ) THEN amount ELSE 0 END),0) AS expense_fuel,
+          COALESCE(SUM(CASE WHEN type='expense' AND t.id IN (
+            SELECT transaction_id FROM daily_spends WHERE transaction_id IS NOT NULL AND strftime('%Y-%m', date) = ?
+          ) THEN amount ELSE 0 END),0) AS expense_daily,
+          COALESCE(SUM(CASE WHEN type='expense' AND is_recurring=1
+            AND t.id NOT IN (SELECT transaction_id FROM fuel_entries WHERE transaction_id IS NOT NULL)
+            AND t.id NOT IN (SELECT transaction_id FROM daily_spends WHERE transaction_id IS NOT NULL)
+          THEN amount ELSE 0 END),0) AS expense_bills
+        FROM transactions t WHERE strftime('%Y-%m', t.date) = ?`, [key, key, key]
       ),
       db.getAllAsync<MonthBalance>('SELECT * FROM month_balances WHERE month=? AND year=?', [m, y]),
     ]);
 
-    const opening = mb[0]?.opening_balance      ?? 0;
-    const savings = mb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
-    const income  = totals[0]?.income  ?? 0;
-    const expense = totals[0]?.expense ?? 0;
+    const opening       = mb[0]?.opening_balance      ?? 0;
+    const savings       = mb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
+    const income        = totals[0]?.income        ?? 0;
+    const expense       = totals[0]?.expense       ?? 0;
+    const expense_fuel  = totals[0]?.expense_fuel  ?? 0;
+    const expense_daily = totals[0]?.expense_daily ?? 0;
+    const expense_bills = totals[0]?.expense_bills ?? 0;
+    const expense_other = Math.max(0, expense - expense_fuel - expense_daily - expense_bills);
 
     result.push({
       label:   d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
       income, expense, savings, opening, month: m, year: y,
       closing: opening + income - expense,
+      expense_fuel, expense_daily, expense_bills, expense_other,
     });
   }
   return result;
@@ -1232,6 +1248,17 @@ export async function getDailySpends(date: string): Promise<DailySpend[]> {
     'SELECT * FROM daily_spends WHERE date = ? ORDER BY created_at DESC',
     [date]
   );
+}
+
+export async function getDailySpendTotalsForDates(dates: string[]): Promise<Record<string, number>> {
+  if (dates.length === 0) return {};
+  const db = await getDb();
+  const placeholders = dates.map(() => '?').join(',');
+  const rows = await db.getAllAsync<{ date: string; total: number }>(
+    `SELECT date, COALESCE(SUM(amount), 0) AS total FROM daily_spends WHERE date IN (${placeholders}) GROUP BY date`,
+    dates
+  );
+  return Object.fromEntries(rows.map(r => [r.date, r.total]));
 }
 
 export async function getDailySpendTotal(date: string): Promise<number> {

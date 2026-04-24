@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   ScrollView, View, Text, StyleSheet, RefreshControl,
-  TouchableOpacity, Modal, TextInput, Alert, FlatList,
+  TouchableOpacity, Modal, TextInput, Alert, FlatList, PanResponder,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import {
   getUpcomingBills, getUpcomingIncome, getEndOfMonthProjection,
   autoPopulateRecurring, getSavingsSummary, UpcomingItem,
   getDailySpends, createDailySpend, deleteDailySpend, DailySpend,
+  getDailySpendTotalsForDates,
   getTodayTransactions, getMonthTransactionDetails, Transaction,
 } from '../../src/db/queries';
 import { useQuery } from '../../src/hooks/useQuery';
@@ -113,6 +114,7 @@ export default function DashboardScreen() {
   // ── daily spends ──────────────────────────────────────────────────────────
   const [selectedDate, setSelectedDate]   = useState(todayStr());
   const [daySpends, setDaySpends]         = useState<DailySpend[]>([]);
+  const [dayTotals, setDayTotals]         = useState<Record<string, number>>({});
   const [spendAmount, setSpendAmount]     = useState('');
   const [spendNote, setSpendNote]         = useState('');
   const [dayModalVisible, setDayModalVisible] = useState(false);
@@ -130,8 +132,15 @@ export default function DashboardScreen() {
     setDaySpends(data);
   }, []);
 
+  const loadAllDayTotals = useCallback(async () => {
+    const dates = daysThisMonth();
+    const totals = await getDailySpendTotalsForDates(dates);
+    setDayTotals(totals);
+  }, []);
+
   useEffect(() => {
     loadDaySpends(todayStr());
+    loadAllDayTotals();
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -151,8 +160,9 @@ export default function DashboardScreen() {
       refetchSavings();
     });
     loadDaySpends(todayStr());
+    loadAllDayTotals();
     loadPrivacy();
-  }, [refetch, refetchProj, refetchBills, refetchIncome, loadDaySpends, loadPrivacy]));
+  }, [refetch, refetchProj, refetchBills, refetchIncome, loadDaySpends, loadAllDayTotals, loadPrivacy]));
 
   // Refetch when month changes
   useEffect(() => { refetch(); }, [viewMonth, viewYear]);
@@ -164,6 +174,8 @@ export default function DashboardScreen() {
     setSpendAmount('');
     setSpendNote('');
     loadDaySpends(selectedDate);
+    loadAllDayTotals();
+    refetch();
   }
 
   async function handleDeleteSpend(id: string) {
@@ -172,6 +184,8 @@ export default function DashboardScreen() {
       { text: 'Delete', style: 'destructive', onPress: async () => {
         await deleteDailySpend(id);
         loadDaySpends(selectedDate);
+        loadAllDayTotals();
+        refetch();
         if (dayModalVisible) {
           const updated = await getDailySpends(dayModalDate);
           setDayModalSpends(updated);
@@ -199,6 +213,16 @@ export default function DashboardScreen() {
     setTodayModalVisible(true);
   }
 
+  // ── swipe to change month ─────────────────────────────────────────────────
+  const panResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gs) =>
+      Math.abs(gs.dx) > 20 && Math.abs(gs.dx) > Math.abs(gs.dy) * 2,
+    onPanResponderRelease: (_, gs) => {
+      if (gs.dx > 60) prevMonth();
+      if (gs.dx < -60) nextMonth();
+    },
+  }), [viewMonth, viewYear]);
+
   const daily     = data?.daily;
   const savings   = data?.savings;
   const dailyPct  = (daily?.limit ?? 0) > 0 ? Math.min(100, Math.round(((daily?.spent ?? 0) / daily!.limit) * 100)) : 0;
@@ -214,8 +238,9 @@ export default function DashboardScreen() {
   const viewMonthLabel = new Date(viewYear, viewMonth - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   return (
+    <View style={[s.container, { backgroundColor: colors.bg }]} {...panResponder.panHandlers}>
     <ScrollView
-      style={[s.container, { backgroundColor: colors.bg }]}
+      style={{ flex: 1 }}
       contentContainerStyle={s.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} tintColor={staticColors.primary} />}
       keyboardShouldPersistTaps="handled"
@@ -330,21 +355,29 @@ export default function DashboardScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
             {days7.map(d => {
               const isSelected = d === selectedDate;
+              const dayTotal   = dayTotals[d] ?? 0;
               const label = d === todayStr() ? 'Today' : new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
               return (
                 <TouchableOpacity
                   key={d}
                   style={[s.datePill, { borderColor: isSelected ? staticColors.primary : colors.border, backgroundColor: isSelected ? staticColors.primary : colors.surfaceHigh }]}
-                  onPress={() => { setSelectedDate(d); loadDaySpends(d); }}
+                  onPress={() => { setSelectedDate(d); loadDaySpends(d); if (dayTotal > 0) openDayModal(d); }}
                 >
                   <Text style={[s.datePillText, { color: isSelected ? '#fff' : colors.textMuted }]}>{label}</Text>
+                  {dayTotal > 0 && (
+                    <Text style={[s.datePillBadge, { color: isSelected ? 'rgba(255,255,255,0.85)' : staticColors.danger }]}>
+                      {fmt(dayTotal)}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
 
           {daySpendTotal > 0 && (
-            <Text style={[s.dayTotal, { color: colors.textMuted }]}>{selectedDateLabel}: <Text style={{ color: staticColors.danger, fontWeight: '700' }}>{fmt(daySpendTotal)}</Text></Text>
+            <TouchableOpacity onPress={() => openDayModal(selectedDate)}>
+              <Text style={[s.dayTotal, { color: colors.textMuted }]}>{selectedDateLabel}: <Text style={{ color: staticColors.danger, fontWeight: '700' }}>{fmt(daySpendTotal)}</Text>  <Text style={{ color: staticColors.primary, fontSize: 11 }}>view →</Text></Text>
+            </TouchableOpacity>
           )}
 
           <View style={s.addSpendRow}>
@@ -618,6 +651,7 @@ export default function DashboardScreen() {
         </View>
       </Modal>
     </ScrollView>
+    </View>
   );
 }
 
@@ -659,8 +693,9 @@ const s = StyleSheet.create({
   todayBadge:        { borderRadius: radius.full, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 3, alignItems: 'flex-end' },
   todayBadgeText:    { ...typography.xs, fontWeight: '700' },
   todayOverText:     { ...typography.xs, fontWeight: '600' },
-  datePill:          { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, borderWidth: 1, marginRight: spacing.xs },
+  datePill:          { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, borderWidth: 1, marginRight: spacing.xs, alignItems: 'center' },
   datePillText:      { ...typography.xs, fontWeight: '600' },
+  datePillBadge:     { fontSize: 9, fontWeight: '700', marginTop: 1 },
   dayTotal:          { ...typography.sm, marginBottom: spacing.sm },
   addSpendRow:       { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.sm },
   spendInput:        { width: 90, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderWidth: 1, fontSize: 14 },

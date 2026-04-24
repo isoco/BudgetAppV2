@@ -8,16 +8,26 @@ import { colors as staticColors, spacing, radius, typography } from '../src/them
 
 const fmt = (n: number) => `€${Math.abs(n).toFixed(0)}`;
 
+// Expense segment colors
+const COLOR_INCOME    = staticColors.success;   // green
+const COLOR_OPENING   = staticColors.primary;   // blue/indigo
+const COLOR_FUEL      = '#f97316';              // orange
+const COLOR_DAILY     = '#f59e0b';              // amber
+const COLOR_BILLS     = '#8b5cf6';              // purple
+const COLOR_OTHER     = '#94a3b8';              // slate
+const COLOR_SAVINGS   = '#10b981';              // teal
+
 type MonthRow = {
   label: string; income: number; expense: number;
   savings: number; opening: number; closing: number;
   month: number; year: number;
+  expense_fuel: number; expense_daily: number;
+  expense_bills: number; expense_other: number;
 };
 
 export default function MonthHistoryScreen() {
   const { colors } = useTheme();
 
-  // 3 past months + current + 12 future months
   const { data = [], loading, refetch } = useQuery(() => getMonthHistory(3, 12));
   const months = data as MonthRow[];
 
@@ -39,17 +49,45 @@ export default function MonthHistoryScreen() {
         <View style={{ width: 24 }} />
       </View>
 
+      {/* Legend */}
+      <View style={[s.legend, { backgroundColor: colors.surface }]}>
+        <LegendDot color={COLOR_INCOME}  label="Income" />
+        <LegendDot color={COLOR_OPENING} label="Opening" />
+        <LegendDot color={COLOR_FUEL}    label="Fuel" />
+        <LegendDot color={COLOR_DAILY}   label="Daily" />
+        <LegendDot color={COLOR_BILLS}   label="Bills" />
+        <LegendDot color={COLOR_OTHER}   label="Other" />
+        <LegendDot color={COLOR_SAVINGS} label="Savings" />
+      </View>
+
       <FlatList
         data={months}
         keyExtractor={(item: any) => `${item.year}-${item.month}`}
         refreshing={loading}
         onRefresh={refetch}
         contentContainerStyle={s.list}
-        renderItem={({ item, index }: { item: MonthRow; index: number }) => {
+        renderItem={({ item }: { item: MonthRow }) => {
           const isCurrent = item.month === currentMonth && item.year === currentYear;
           const isFuture  = item.year > currentYear || (item.year === currentYear && item.month > currentMonth);
           const isPositive = item.closing >= 0;
           const hasData    = item.income > 0 || item.expense > 0;
+
+          // Bar 1 scale: total inflow = income + opening
+          const totalIn  = item.income + Math.max(0, item.opening);
+          // Bar 2 scale: total out = expense + savings (capped to totalIn for visual)
+          const totalOut = item.expense + item.savings;
+
+          // Bar 1 segments (% of totalIn)
+          const incomePct  = totalIn > 0 ? Math.min(100, (item.income / totalIn) * 100) : 0;
+          const openPct    = totalIn > 0 ? Math.min(100 - incomePct, (Math.max(0, item.opening) / totalIn) * 100) : 0;
+
+          // Bar 2 segments (% of totalIn for same scale)
+          const scale = totalIn > 0 ? 100 / totalIn : 0;
+          const fuelPct    = Math.min(100, item.expense_fuel  * scale);
+          const dailyPct   = Math.min(100 - fuelPct, item.expense_daily * scale);
+          const billsPct   = Math.min(100 - fuelPct - dailyPct, item.expense_bills * scale);
+          const otherPct   = Math.min(100 - fuelPct - dailyPct - billsPct, item.expense_other * scale);
+          const savingsPct = Math.min(100 - fuelPct - dailyPct - billsPct - otherPct, item.savings * scale);
 
           return (
             <View>
@@ -96,33 +134,51 @@ export default function MonthHistoryScreen() {
 
                 {hasData && (
                   <View style={s.rows}>
-                    {item.opening > 0 && <Row label="Opening" value={fmt(item.opening)} color={staticColors.primary} colors={colors} />}
-                    <Row label="Income"   value={fmt(item.income)}  color={staticColors.success} colors={colors} />
-                    <Row label="Expenses" value={fmt(item.expense)} color={staticColors.danger}  sign="-" colors={colors} />
-                    {item.savings > 0 && <Row label="Savings" value={fmt(item.savings)} color={staticColors.warning} sign="-" colors={colors} />}
+                    {item.opening > 0 && <Row label="Opening" value={fmt(item.opening)} color={COLOR_OPENING} colors={colors} />}
+                    <Row label="Income"   value={fmt(item.income)}  color={COLOR_INCOME}  colors={colors} />
+                    <Row label="Expenses" value={fmt(item.expense)} color={staticColors.danger} sign="-" colors={colors} />
+                    {item.savings > 0 && <Row label="Savings" value={fmt(item.savings)} color={COLOR_SAVINGS} sign="-" colors={colors} />}
                   </View>
                 )}
 
-                {hasData && (() => {
-                  const total = item.opening + item.income;
-                  if (total <= 0) return null;
-                  const openPct   = Math.min(100, (item.opening  / total) * 100);
-                  const expPct    = Math.min(100 - openPct, (item.expense / total) * 100);
-                  const savPct    = Math.min(100 - openPct - expPct, (item.savings / total) * 100);
-                  return (
-                    <View style={[s.track, { backgroundColor: colors.surfaceHigh }]}>
-                      {openPct > 0 && <View style={[s.bar, { width: `${openPct}%` as any, backgroundColor: staticColors.primary }]} />}
-                      {expPct  > 0 && <View style={[s.bar, { width: `${expPct}%`  as any, backgroundColor: staticColors.danger  }]} />}
-                      {savPct  > 0 && <View style={[s.bar, { width: `${savPct}%`  as any, backgroundColor: staticColors.warning }]} />}
+                {hasData && totalIn > 0 && (
+                  <View style={s.barsContainer}>
+                    {/* Bar 1: Inflow = Income + Opening */}
+                    <View style={s.barLabelRow}>
+                      <Text style={[s.barLabel, { color: colors.textSubtle }]}>In</Text>
+                      <View style={[s.track, { backgroundColor: colors.surfaceHigh }]}>
+                        {incomePct > 0 && <View style={[s.bar, { width: `${incomePct}%` as any, backgroundColor: COLOR_INCOME }]} />}
+                        {openPct   > 0 && <View style={[s.bar, { width: `${openPct}%`   as any, backgroundColor: COLOR_OPENING }]} />}
+                      </View>
                     </View>
-                  );
-                })()}
+                    {/* Bar 2: Outflow = Fuel + Daily + Bills + Other + Savings */}
+                    <View style={s.barLabelRow}>
+                      <Text style={[s.barLabel, { color: colors.textSubtle }]}>Out</Text>
+                      <View style={[s.track, { backgroundColor: colors.surfaceHigh }]}>
+                        {fuelPct    > 0 && <View style={[s.bar, { width: `${fuelPct}%`    as any, backgroundColor: COLOR_FUEL }]} />}
+                        {dailyPct   > 0 && <View style={[s.bar, { width: `${dailyPct}%`   as any, backgroundColor: COLOR_DAILY }]} />}
+                        {billsPct   > 0 && <View style={[s.bar, { width: `${billsPct}%`   as any, backgroundColor: COLOR_BILLS }]} />}
+                        {otherPct   > 0 && <View style={[s.bar, { width: `${otherPct}%`   as any, backgroundColor: COLOR_OTHER }]} />}
+                        {savingsPct > 0 && <View style={[s.bar, { width: `${savingsPct}%` as any, backgroundColor: COLOR_SAVINGS }]} />}
+                      </View>
+                    </View>
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
           );
         }}
         ListEmptyComponent={!loading ? <Text style={[s.empty, { color: colors.textMuted }]}>No data</Text> : null}
       />
+    </View>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
+      <Text style={{ fontSize: 10, color: '#94a3b8' }}>{label}</Text>
     </View>
   );
 }
@@ -140,6 +196,7 @@ const s = StyleSheet.create({
   container:    { flex: 1 },
   header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
   title:        { ...typography.lg, fontWeight: '600' },
+  legend:       { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginHorizontal: spacing.md, borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.xs },
   list:         { padding: spacing.md, paddingBottom: 40 },
   dividerRow:   { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm, marginTop: spacing.xs },
   dividerLine:  { flex: 1, height: 1, opacity: 0.4 },
@@ -150,7 +207,10 @@ const s = StyleSheet.create({
   badge:        { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full },
   badgeText:    { ...typography.sm, fontWeight: '700' },
   rows:         { marginBottom: spacing.sm },
-  track:        { height: 6, borderRadius: radius.full, overflow: 'hidden', flexDirection: 'row' },
-  bar:          { height: '100%', borderRadius: radius.full },
+  barsContainer:{ gap: 5, marginTop: spacing.xs },
+  barLabelRow:  { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  barLabel:     { fontSize: 10, fontWeight: '600', width: 22, textAlign: 'right' },
+  track:        { flex: 1, height: 8, borderRadius: radius.full, overflow: 'hidden', flexDirection: 'row' },
+  bar:          { height: '100%' },
   empty:        { ...typography.base, textAlign: 'center', marginTop: spacing.xl },
 });

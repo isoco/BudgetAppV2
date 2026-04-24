@@ -2,10 +2,11 @@ import { useCallback, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getBudgets } from '../../src/db/queries';
+import { getBudgets, createTransaction, cascadeOpeningBalances } from '../../src/db/queries';
 import { useQuery } from '../../src/hooks/useQuery';
 import { colors, spacing, radius, typography } from '../../src/theme';
 import { BudgetCard } from '../../src/components/BudgetCard';
+import { format } from 'date-fns';
 
 export default function BudgetScreen() {
   const now = new Date();
@@ -16,6 +17,18 @@ export default function BudgetScreen() {
   const [showHelp, setShowHelp] = useState(false);
 
   useFocusEffect(useCallback(() => { refetch(); }, []));
+
+  async function handleAddExpense(categoryId: string, amount: number, note: string) {
+    await createTransaction({
+      amount,
+      type: 'expense',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      category_id: categoryId,
+      note: note || null,
+    });
+    await cascadeOpeningBalances(now.getMonth() + 1, now.getFullYear());
+    refetch();
+  }
 
   const totalBudget = (data as any[]).reduce((s, b) => s + b.amount, 0);
   const totalSpent  = (data as any[]).reduce((s, b) => s + (b.spent ?? 0), 0);
@@ -61,7 +74,7 @@ export default function BudgetScreen() {
         keyExtractor={b => b.id}
         refreshing={loading}
         onRefresh={refetch}
-        renderItem={({ item }) => <BudgetCard budget={item} />}
+        renderItem={({ item }) => <BudgetCard budget={item} onAddExpense={handleAddExpense} />}
         contentContainerStyle={s.list}
         ListEmptyComponent={
           !loading ? (

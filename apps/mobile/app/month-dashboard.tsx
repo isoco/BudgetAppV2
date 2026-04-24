@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, Modal,
+  ActivityIndicator, Alert, TextInput, Modal, PanResponder,
 } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -119,20 +119,45 @@ export default function MonthDashboardScreen() {
     load();
   }
 
+  function navigateMonth(delta: number) {
+    let m = month + delta;
+    let y = year;
+    if (m > 12) { m = 1; y++; }
+    if (m < 1)  { m = 12; y--; }
+    router.replace(`/month-dashboard?month=${m}&year=${y}`);
+  }
+
+  const panResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gs) =>
+      Math.abs(gs.dx) > 20 && Math.abs(gs.dx) > Math.abs(gs.dy) * 2,
+    onPanResponderRelease: (_, gs) => {
+      if (gs.dx >  60) navigateMonth(-1);
+      if (gs.dx < -60) navigateMonth(1);
+    },
+  }), [month, year]);
+
   const incomeTxs  = data?.transactions.filter(t => t.type === 'income')  ?? [];
   const expenseTxs = data?.transactions.filter(t => t.type === 'expense') ?? [];
 
   return (
-    <View style={[s.container, { backgroundColor: colors.bg }]}>
+    <View style={[s.container, { backgroundColor: colors.bg }]} {...panResponder.panHandlers}>
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <View style={{ alignItems: 'center' }}>
-          <Text style={[s.title, { color: colors.text }]}>{monthLabel}</Text>
-          {isCurrent && <Text style={[s.badge, { color: staticColors.primary }]}>Current Month</Text>}
-          {isFuture  && <Text style={[s.badge, { color: colors.textMuted }]}>Upcoming</Text>}
+        <View style={{ alignItems: 'center', flexDirection: 'row', gap: spacing.sm }}>
+          <TouchableOpacity onPress={() => navigateMonth(-1)}>
+            <Ionicons name="chevron-back" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={[s.title, { color: colors.text }]}>{monthLabel}</Text>
+            {isCurrent && <Text style={[s.badge, { color: staticColors.primary }]}>Current Month</Text>}
+            {isFuture  && <Text style={[s.badge, { color: colors.textMuted }]}>Upcoming</Text>}
+          </View>
+          <TouchableOpacity onPress={() => navigateMonth(1)}>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
         </View>
         <View style={{ width: 24 }} />
       </View>
