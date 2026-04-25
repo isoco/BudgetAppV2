@@ -12,6 +12,7 @@ import {
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
 import { TransactionItem } from '../../src/components/TransactionItem';
+import { useIncomeHidden } from '../../src/store/privacyStore';
 
 type Filter = 'all' | 'income' | 'expense';
 type DailyExpense = { date: string; total: number };
@@ -29,6 +30,7 @@ function groupExpensesByDay(txs: Transaction[]): DailyExpense[] {
 
 export default function TransactionsScreen() {
   const { colors } = useTheme();
+  const hide = useIncomeHidden();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading]           = useState(true);
   const [filter, setFilter]             = useState<Filter>('all');
@@ -157,7 +159,9 @@ export default function TransactionsScreen() {
       <View style={[s.summary, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <View style={s.summaryCol}>
           <Text style={[s.summaryLabel, { color: colors.textMuted }]}>Income</Text>
-          <Text style={[s.summaryValue, { color: staticColors.success }]}>+€{checkedIncome.toFixed(2)}</Text>
+          <Text style={[s.summaryValue, { color: staticColors.success }]}>
+            {hide ? '€ ••••' : `+€${checkedIncome.toFixed(2)}`}
+          </Text>
         </View>
         <View style={[s.summaryDivider, { backgroundColor: colors.border }]} />
         <View style={s.summaryCol}>
@@ -168,7 +172,7 @@ export default function TransactionsScreen() {
         <View style={s.summaryCol}>
           <Text style={[s.summaryLabel, { color: colors.textMuted }]}>Balance</Text>
           <Text style={[s.summaryValue, { color: checkedBalance >= 0 ? staticColors.success : staticColors.danger }]}>
-            {checkedBalance >= 0 ? '+' : ''}€{checkedBalance.toFixed(2)}
+            {hide ? '€ ••••' : `${checkedBalance >= 0 ? '+' : ''}€${checkedBalance.toFixed(2)}`}
           </Text>
         </View>
       </View>
@@ -233,6 +237,7 @@ export default function TransactionsScreen() {
               onDelete={() => handleDelete(item.tx)}
               checked={!!item.tx.paid_date}
               onToggle={() => handleToggle(item.tx)}
+              hideAmount={hide && item.tx.type === 'income'}
             />
           );
         }}
@@ -258,7 +263,7 @@ export default function TransactionsScreen() {
                 <View style={s.modalHandle} />
                 <Text style={[s.modalTitle, { color: colors.text }]}>Transaction Details</Text>
                 <DetailRow label="Category"  value={selectedTx.category_name ?? '—'}    colors={colors} />
-                <DetailRow label="Amount"    value={`${selectedTx.type === 'income' ? '+' : '-'}€${selectedTx.amount.toFixed(2)}`} colors={colors} />
+                <DetailRow label="Amount"    value={hide && selectedTx.type === 'income' ? '€ ••••' : `${selectedTx.type === 'income' ? '+' : '-'}€${selectedTx.amount.toFixed(2)}`} colors={colors} />
                 <DetailRow label="Type"      value={selectedTx.type}                     colors={colors} />
                 <DetailRow label="Date"      value={selectedTx.date}                     colors={colors} />
                 {selectedTx.merchant && <DetailRow label="Merchant" value={selectedTx.merchant} colors={colors} />}

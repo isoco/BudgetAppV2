@@ -6,6 +6,7 @@ export const colors = {
   success:     '#10b981',
   danger:      '#ef4444',
   warning:     '#f59e0b',
+  savings:     '#14b8a6',   // teal — used for all savings displays
 
   // Gradients (start → end)
   gradientPrimary: ['#6366f1', '#8b5cf6'] as [string, string],

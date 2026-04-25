@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getBudgets, createTransaction, cascadeOpeningBalances } from '../../src/db/queries';
+import { getBudgets, createTransaction, deleteTransaction, cascadeOpeningBalances, getTransactions } from '../../src/db/queries';
+import type { Transaction } from '../../src/db/queries';
 import { useQuery } from '../../src/hooks/useQuery';
 import { colors, spacing, radius, typography } from '../../src/theme';
 import { BudgetCard } from '../../src/components/BudgetCard';
@@ -10,13 +11,27 @@ import { format } from 'date-fns';
 
 export default function BudgetScreen() {
   const now = new Date();
+  const month = now.getMonth() + 1;
+  const year  = now.getFullYear();
+
   const { data = [], loading, refetch } = useQuery(
-    () => getBudgets(now.getMonth() + 1, now.getFullYear()),
-    [now.getMonth(), now.getFullYear()]
+    () => getBudgets(month, year),
+    [month, year]
   );
   const [showHelp, setShowHelp] = useState(false);
+  const [txns, setTxns] = useState<Transaction[]>([]);
 
-  useFocusEffect(useCallback(() => { refetch(); }, []));
+  const loadTxns = useCallback(async () => {
+    const from = `${year}-${String(month).padStart(2, '0')}-01`;
+    const to   = `${year}-${String(month).padStart(2, '0')}-31`;
+    const rows = await getTransactions({ from, to, type: 'expense', limit: 500 });
+    setTxns(rows);
+  }, [month, year]);
+
+  useFocusEffect(useCallback(() => {
+    refetch();
+    loadTxns();
+  }, []));
 
   async function handleAddExpense(categoryId: string, amount: number, note: string) {
     await createTransaction({
@@ -26,8 +41,16 @@ export default function BudgetScreen() {
       category_id: categoryId,
       note: note || null,
     });
-    await cascadeOpeningBalances(now.getMonth() + 1, now.getFullYear());
+    await cascadeOpeningBalances(month, year);
     refetch();
+    loadTxns();
+  }
+
+  async function handleDeleteExpense(txId: string) {
+    await deleteTransaction(txId);
+    await cascadeOpeningBalances(month, year);
+    refetch();
+    loadTxns();
   }
 
   const totalBudget = (data as any[]).reduce((s, b) => s + b.amount, 0);
@@ -74,7 +97,14 @@ export default function BudgetScreen() {
         keyExtractor={b => b.id}
         refreshing={loading}
         onRefresh={refetch}
-        renderItem={({ item }) => <BudgetCard budget={item} onAddExpense={handleAddExpense} />}
+        renderItem={({ item }) => (
+          <BudgetCard
+            budget={item}
+            transactions={txns.filter(t => t.category_id === item.category_id)}
+            onAddExpense={handleAddExpense}
+            onDeleteExpense={handleDeleteExpense}
+          />
+        )}
         contentContainerStyle={s.list}
         ListEmptyComponent={
           !loading ? (

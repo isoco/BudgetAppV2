@@ -20,6 +20,7 @@ import {
 import { useQuery } from '../../src/hooks/useQuery';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography, shadow } from '../../src/theme';
+import { usePrivacyStore } from '../../src/store/privacyStore';
 import { TransactionItem } from '../../src/components/TransactionItem';
 import { SpendingChart } from '../../src/components/SpendingChart';
 
@@ -57,26 +58,21 @@ export default function DashboardScreen() {
   }
 
 
-  // ── privacy ───────────────────────────────────────────────────────────────
-  const [privacyEnabled,  setPrivacyEnabled]  = useState(false);
-  const [biometricEnabled, setBiometricEnabled] = useState(false);
-  const [hideCats,        setHideCats]        = useState('all'); // 'all' or comma-sep cat IDs
-  const [isLocked,        setIsLocked]        = useState(true); // locked = numbers hidden
+  // ── privacy (global store) ────────────────────────────────────────────────
+  const { privacyEnabled, isLocked, biometricEnabled, hideCats, setPrivacy } = usePrivacyStore();
 
   const loadPrivacy = useCallback(async () => {
     const s = await getSettings();
-    setPrivacyEnabled(s.privacy_hide_income);
-    setBiometricEnabled(s.privacy_biometric);
-    setHideCats(s.privacy_hide_cats ?? 'all');
-    setIsLocked(true); // always start locked on focus
+    setPrivacy({
+      privacyEnabled:   s.privacy_hide_income,
+      biometricEnabled: s.privacy_biometric,
+      hideCats:         s.privacy_hide_cats ?? 'all',
+      isLocked:         true,
+    });
   }, []);
 
   async function handleLockToggle() {
-    if (!isLocked) {
-      setIsLocked(true);
-      return;
-    }
-    // Unlock
+    if (!isLocked) { setPrivacy({ isLocked: true }); return; }
     if (biometricEnabled) {
       const supported = await LocalAuthentication.hasHardwareAsync();
       if (supported) {
@@ -84,25 +80,14 @@ export default function DashboardScreen() {
           promptMessage: 'Unlock income figures',
           fallbackLabel: 'Use passcode',
         });
-        if (result.success) setIsLocked(false);
+        if (result.success) setPrivacy({ isLocked: false });
         return;
       }
     }
-    setIsLocked(false);
+    setPrivacy({ isLocked: false });
   }
 
-  // Mask a value based on privacy settings
-  function masked(value: string, isIncome: boolean, categoryId?: string): string {
-    if (!privacyEnabled || !isLocked) return value;
-    if (!isIncome) return value;
-    if (hideCats === 'all') return '€ ••••';
-    const cats = hideCats.split(',').filter(Boolean);
-    if (!categoryId || !cats.includes(categoryId)) return value;
-    return '€ ••••';
-  }
-  function incomeHidden(): boolean {
-    return privacyEnabled && isLocked;
-  }
+  function incomeHidden(): boolean { return privacyEnabled && isLocked; }
 
   // ── data ──────────────────────────────────────────────────────────────────
   const dashFetcher = useCallback(() => getDashboardData({ month: viewMonth, year: viewYear }), [viewMonth, viewYear]);

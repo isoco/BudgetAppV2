@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
-import { colors as staticColors, spacing, radius, typography, shadow } from '../theme';
+import { colors as staticColors, spacing, radius, typography } from '../theme';
+import type { Transaction } from '../db/queries';
 
 interface Budget {
   id: string;
@@ -18,19 +20,21 @@ interface Budget {
 
 interface Props {
   budget: Budget;
+  transactions?: Transaction[];
   onAddExpense: (categoryId: string, amount: number, note: string) => Promise<void>;
+  onDeleteExpense?: (txId: string) => Promise<void>;
 }
 
-export function BudgetCard({ budget: b, onAddExpense }: Props) {
+export function BudgetCard({ budget: b, transactions = [], onAddExpense, onDeleteExpense }: Props) {
   const { colors } = useTheme();
   const isOver  = b.pct >= 100;
   const isWarn  = b.pct >= 80;
   const barColor = isOver ? staticColors.danger : isWarn ? staticColors.warning : staticColors.success;
 
-  const [showForm, setShowForm] = useState(false);
-  const [amount, setAmount]     = useState('');
-  const [note, setNote]         = useState('');
-  const [saving, setSaving]     = useState(false);
+  const [tab, setTab]       = useState<'add' | 'list' | null>(null);
+  const [amount, setAmount] = useState('');
+  const [note, setNote]     = useState('');
+  const [saving, setSaving] = useState(false);
 
   async function handleAdd() {
     const num = parseFloat(amount);
@@ -40,18 +44,28 @@ export function BudgetCard({ budget: b, onAddExpense }: Props) {
       await onAddExpense(b.category_id, num, note);
       setAmount('');
       setNote('');
-      setShowForm(false);
+      setTab(null);
     } finally {
       setSaving(false);
     }
   }
 
+  function handleEditBudget() {
+    router.push(`/set-budget?categoryId=${b.category_id}&amount=${b.amount}`);
+  }
+
+  function confirmDelete(tx: Transaction) {
+    Alert.alert('Delete expense', `Delete ${tx.note ?? tx.merchant ?? 'this expense'}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => onDeleteExpense?.(tx.id) },
+    ]);
+  }
+
   return (
     <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      {/* Left accent stripe */}
       <View style={[s.accentStripe, { backgroundColor: b.category_color }]} />
-
       <View style={s.inner}>
+        {/* Header row */}
         <View style={s.row}>
           <View style={[s.icon, { backgroundColor: b.category_color + '20' }]}>
             <Text style={s.iconText}>{iconToEmoji(b.category_icon)}</Text>
@@ -68,11 +82,26 @@ export function BudgetCard({ budget: b, onAddExpense }: Props) {
               {isOver ? `-€${Math.abs(b.remaining).toFixed(2)}` : `€${b.remaining.toFixed(2)} left`}
             </Text>
           </View>
+
+          {/* Edit budget amount */}
+          <TouchableOpacity onPress={handleEditBudget} style={[s.iconBtn, { backgroundColor: colors.surfaceHigh }]}>
+            <Ionicons name="pencil-outline" size={15} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          {/* Toggle add form */}
           <TouchableOpacity
-            onPress={() => setShowForm(v => !v)}
-            style={[s.addBtn, { backgroundColor: showForm ? colors.surfaceHigh : staticColors.primary + '18' }]}
+            onPress={() => setTab(t => t === 'add' ? null : 'add')}
+            style={[s.iconBtn, { backgroundColor: tab === 'add' ? colors.surfaceHigh : staticColors.primary + '18' }]}
           >
-            <Ionicons name={showForm ? 'close' : 'add'} size={18} color={showForm ? colors.textMuted : staticColors.primary} />
+            <Ionicons name={tab === 'add' ? 'close' : 'add'} size={17} color={tab === 'add' ? colors.textMuted : staticColors.primary} />
+          </TouchableOpacity>
+
+          {/* Toggle expense list */}
+          <TouchableOpacity
+            onPress={() => setTab(t => t === 'list' ? null : 'list')}
+            style={[s.iconBtn, { backgroundColor: tab === 'list' ? colors.surfaceHigh : staticColors.warning + '18' }]}
+          >
+            <Ionicons name="list-outline" size={17} color={tab === 'list' ? colors.textMuted : staticColors.warning} />
           </TouchableOpacity>
         </View>
 
@@ -81,7 +110,8 @@ export function BudgetCard({ budget: b, onAddExpense }: Props) {
           <View style={[s.bar, { width: `${Math.min(100, b.pct)}%` as any, backgroundColor: barColor }]} />
         </View>
 
-        {showForm && (
+        {/* Add expense form */}
+        {tab === 'add' && (
           <View style={[s.form, { borderTopColor: colors.border }]}>
             <TextInput
               style={[s.amtInput, { backgroundColor: colors.surfaceHigh, color: colors.text, borderColor: colors.border }]}
@@ -105,6 +135,38 @@ export function BudgetCard({ budget: b, onAddExpense }: Props) {
             >
               <Text style={s.saveBtnText}>Add</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Expense list */}
+        {tab === 'list' && (
+          <View style={[s.txList, { borderTopColor: colors.border }]}>
+            {transactions.length === 0 ? (
+              <Text style={[s.txEmpty, { color: colors.textSubtle }]}>No expenses recorded this month</Text>
+            ) : (
+              transactions.map(tx => (
+                <View key={tx.id} style={[s.txRow, { borderBottomColor: colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.txLabel, { color: colors.text }]}>{tx.note ?? tx.merchant ?? tx.category_name ?? 'Expense'}</Text>
+                    <Text style={[s.txDate, { color: colors.textSubtle }]}>{tx.date}</Text>
+                  </View>
+                  <Text style={[s.txAmt, { color: staticColors.danger }]}>-€{tx.amount.toFixed(2)}</Text>
+                  <View style={s.txActions}>
+                    <TouchableOpacity
+                      onPress={() => router.push(`/add-transaction?txId=${tx.id}`)}
+                      style={s.txBtn}
+                    >
+                      <Ionicons name="pencil-outline" size={14} color={staticColors.primary} />
+                    </TouchableOpacity>
+                    {onDeleteExpense && (
+                      <TouchableOpacity onPress={() => confirmDelete(tx)} style={s.txBtn}>
+                        <Ionicons name="trash-outline" size={14} color={staticColors.danger} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ))
+            )}
           </View>
         )}
       </View>
@@ -132,10 +194,10 @@ const s = StyleSheet.create({
   body:        { flex: 1 },
   name:        { ...typography.base, fontWeight: '600' },
   sub:         { ...typography.xs, marginTop: 2 },
-  right:       { alignItems: 'flex-end', marginRight: spacing.sm },
+  right:       { alignItems: 'flex-end', marginRight: spacing.xs },
   pct:         { ...typography.sm, fontWeight: '800' },
   remaining:   { ...typography.xs, marginTop: 1 },
-  addBtn:      { width: 32, height: 32, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center' },
+  iconBtn:     { width: 30, height: 30, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center', marginLeft: 4 },
   track:       { height: 8, borderRadius: radius.full, overflow: 'hidden' },
   bar:         { height: '100%', borderRadius: radius.full },
   form:        { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.sm, alignItems: 'center', paddingTop: spacing.sm, borderTopWidth: 1 },
@@ -143,4 +205,12 @@ const s = StyleSheet.create({
   noteInput:   { flex: 1, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 7, fontSize: 14, borderWidth: 1 },
   saveBtn:     { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.md },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  txList:      { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1 },
+  txEmpty:     { ...typography.xs, textAlign: 'center', paddingVertical: spacing.sm },
+  txRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth },
+  txLabel:     { ...typography.sm, fontWeight: '500' },
+  txDate:      { ...typography.xs, marginTop: 1 },
+  txAmt:       { ...typography.sm, fontWeight: '700', marginHorizontal: spacing.sm },
+  txActions:   { flexDirection: 'row', gap: 6 },
+  txBtn:       { padding: 4 },
 });

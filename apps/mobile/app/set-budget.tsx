@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getCategories, upsertBudget } from '../src/db/queries';
 import { useQuery } from '../src/hooks/useQuery';
@@ -13,9 +13,10 @@ function iconToEmoji(icon: string): string {
 
 export default function SetBudgetScreen() {
   const now = new Date();
+  const params = useLocalSearchParams<{ categoryId?: string; amount?: string }>();
   const { data: categories = [] } = useQuery(getCategories);
-  const [catId, setCatId]   = useState<string | null>(null);
-  const [amount, setAmount] = useState('');
+  const [catId, setCatId]   = useState<string | null>(params.categoryId ?? null);
+  const [amount, setAmount] = useState(params.amount ?? '');
   const [saving, setSaving] = useState(false);
 
   const expenseCats = (categories as any[]).filter(c => c.type === 'expense' || c.type === 'both');

@@ -12,11 +12,13 @@ import {
 } from '../src/db/queries';
 import { useTheme } from '../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../src/theme';
+import { useIncomeHidden } from '../src/store/privacyStore';
 
 const fmt = (n: number) => `€${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function MonthDashboardScreen() {
   const { colors } = useTheme();
+  const hide = useIncomeHidden();
   const { month: mParam, year: yParam } = useLocalSearchParams<{ month: string; year: string }>();
   const month = parseInt(mParam ?? '0');
   const year  = parseInt(yParam ?? '0');
@@ -167,24 +169,26 @@ export default function MonthDashboardScreen() {
       ) : (
         <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
 
-          {/* Summary card — balance = income - expense (savings separate) */}
+          {/* Summary card */}
           <View style={[s.summaryCard, { backgroundColor: staticColors.primary + '18' }]}>
-            <SummaryChip label="Income"   value={fmt(data?.income ?? 0)}  color={staticColors.success} />
+            <SummaryChip label="Income"   value={hide ? '€ ••••' : fmt(data?.income ?? 0)} color={staticColors.success} />
             <View style={[s.vDivider, { backgroundColor: colors.border }]} />
             <SummaryChip label="Expenses" value={fmt(data?.expense ?? 0)} color={staticColors.danger} />
             <View style={[s.vDivider, { backgroundColor: colors.border }]} />
             <SummaryChip
               label="Balance"
-              value={`${(data?.balance ?? 0) < 0 ? '-' : ''}${fmt(data?.balance ?? 0)}`}
+              value={hide ? '€ ••••' : `${(data?.balance ?? 0) < 0 ? '-' : ''}${fmt(data?.balance ?? 0)}`}
               color={(data?.balance ?? 0) >= 0 ? staticColors.success : staticColors.danger}
             />
           </View>
 
-          {/* Savings row — always shown, editable */}
-          <View style={[s.savingsRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Ionicons name="wallet-outline" size={18} color={staticColors.warning} style={{ marginRight: spacing.sm }} />
+          {/* Savings row — teal accent, always shown, editable */}
+          <View style={[s.savingsRow, { backgroundColor: staticColors.savings + '12', borderColor: staticColors.savings + '55' }]}>
+            <View style={[s.savingsIconWrap, { backgroundColor: staticColors.savings + '22' }]}>
+              <Ionicons name="wallet" size={18} color={staticColors.savings} />
+            </View>
             <View style={{ flex: 1 }}>
-              <Text style={[s.savingsLabel, { color: colors.textMuted }]}>Savings this month</Text>
+              <Text style={[s.savingsLabel, { color: staticColors.savings }]}>Savings this month</Text>
               {editingSavings ? (
                 <View style={s.savingsEditRow}>
                   <TextInput
@@ -192,7 +196,7 @@ export default function MonthDashboardScreen() {
                     onChangeText={setSavingsInput}
                     keyboardType="decimal-pad"
                     autoFocus
-                    style={[s.savingsInput, { color: colors.text, borderColor: colors.border }]}
+                    style={[s.savingsInput, { color: colors.text, borderColor: staticColors.savings + '88' }]}
                   />
                   <TouchableOpacity onPress={saveSavings} style={s.savingsBtn}>
                     <Ionicons name="checkmark" size={18} color={staticColors.success} />
@@ -203,8 +207,8 @@ export default function MonthDashboardScreen() {
                 </View>
               ) : (
                 <TouchableOpacity onPress={() => { setSavingsInput(String(data?.savings ?? 0)); setEditingSavings(true); }}>
-                  <Text style={[s.savingsValue, { color: staticColors.warning }]}>
-                    {fmt(data?.savings ?? 0)}
+                  <Text style={[s.savingsValue, { color: staticColors.savings }]}>
+                    {hide ? '€ ••••' : fmt(data?.savings ?? 0)}
                     <Text style={[s.savingsHint, { color: colors.textSubtle }]}> · tap to edit</Text>
                   </Text>
                 </TouchableOpacity>
@@ -339,11 +343,17 @@ function SummaryChip({ label, value, color }: { label: string; value: string; co
   );
 }
 
-function Section({ label, color, children }: { label: string; color: string; children: React.ReactNode }) {
+function Section({ label, color, children, defaultOpen = true }: {
+  label: string; color: string; children: React.ReactNode; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <>
-      <Text style={[s.sectionLabel, { color }]}>{label}</Text>
-      {children}
+      <TouchableOpacity style={s.sectionHeader} onPress={() => setOpen(v => !v)} activeOpacity={0.7}>
+        <Text style={[s.sectionLabel, { color }]}>{label}</Text>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={14} color={color} />
+      </TouchableOpacity>
+      {open && children}
     </>
   );
 }
@@ -392,14 +402,16 @@ const s = StyleSheet.create({
   content:      { padding: spacing.md, paddingBottom: 100 },
   summaryCard:  { flexDirection: 'row', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm },
   vDivider:     { width: 1, marginHorizontal: spacing.sm },
-  savingsRow:   { flexDirection: 'row', alignItems: 'center', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1 },
-  savingsLabel: { fontSize: 11, marginBottom: 2 },
-  savingsValue: { fontSize: 15, fontWeight: '700' },
-  savingsHint:  { fontSize: 11, fontWeight: '400' },
+  savingsRow:     { flexDirection: 'row', alignItems: 'center', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1 },
+  savingsIconWrap:{ width: 36, height: 36, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center', marginRight: spacing.sm },
+  savingsLabel:   { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  savingsValue:   { fontSize: 17, fontWeight: '800' },
+  savingsHint:    { fontSize: 11, fontWeight: '400' },
   savingsEditRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  savingsInput: { flex: 1, fontSize: 15, borderBottomWidth: 1, paddingVertical: 2 },
-  savingsBtn:   { padding: 4 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: spacing.md, marginBottom: spacing.xs },
+  savingsInput:   { flex: 1, fontSize: 15, borderBottomWidth: 1, paddingVertical: 2 },
+  savingsBtn:     { padding: 4 },
+  sectionHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.md, marginBottom: spacing.xs },
+  sectionLabel:   { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   txRow:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: spacing.sm },
   dot:          { width: 8, height: 8, borderRadius: 4 },
   txName:       { fontSize: 14, fontWeight: '500' },

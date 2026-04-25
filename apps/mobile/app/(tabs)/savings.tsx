@@ -6,6 +6,7 @@ import { getSavingsHistory, getMonthBalance, SavingsMonth, updateMonthlySavings,
 import { useQuery } from '../../src/hooks/useQuery';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
+import { useIncomeHidden } from '../../src/store/privacyStore';
 
 const fmt = (n: number) => `€${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -26,6 +27,7 @@ function getMonthOptions(): { month: number; year: number; label: string }[] {
 
 export default function SavingsScreen() {
   const { colors } = useTheme();
+  const hide = useIncomeHidden();
   const { data, loading, refetch } = useQuery(getSavingsHistory);
   const months: SavingsMonth[] = data?.months ?? [];
   const total = data?.total ?? 0;
@@ -100,7 +102,7 @@ export default function SavingsScreen() {
       {/* Total card */}
       <View style={[s.totalCard, { backgroundColor: staticColors.primary + '18', borderColor: staticColors.primary + '44' }]}>
         <Text style={[s.totalLabel, { color: colors.textMuted }]}>Total Saved</Text>
-        <Text style={[s.totalAmount, { color: staticColors.primary }]}>{fmt(total)}</Text>
+        <Text style={[s.totalAmount, { color: staticColors.primary }]}>{hide ? '€ ••••' : fmt(total)}</Text>
       </View>
 
       {/* Current month savings */}
@@ -131,7 +133,7 @@ export default function SavingsScreen() {
           </View>
         ) : (
           <TouchableOpacity onPress={() => { setCurrentInput(String(curSavings)); setEditingCurrent(true); }} style={s.curAmtRow}>
-            <Text style={[s.curAmt, { color: staticColors.warning }]}>{fmt(curSavings)}</Text>
+            <Text style={[s.curAmt, { color: staticColors.warning }]}>{hide ? '€ ••••' : fmt(curSavings)}</Text>
             <Text style={[s.curHint, { color: colors.textSubtle }]}>tap to edit</Text>
           </TouchableOpacity>
         )}
@@ -213,7 +215,7 @@ export default function SavingsScreen() {
               <Text style={[s.sub, { color: colors.textMuted }]}>Cumulative: {fmt(item.cumulative)}</Text>
             </View>
             <View style={s.rowRight}>
-              <Text style={[s.amount, { color: staticColors.primary }]}>+{fmt(item.savings)}</Text>
+              <Text style={[s.amount, { color: staticColors.primary }]}>{hide ? '€ ••••' : `+${fmt(item.savings)}`}</Text>
               <Ionicons name="pencil-outline" size={12} color={colors.textMuted} style={{ marginTop: 2 }} />
             </View>
           </TouchableOpacity>

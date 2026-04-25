@@ -21,9 +21,10 @@ interface Props {
   onLongPress?: () => void;
   checked?: boolean;
   onToggle?: () => void;
+  hideAmount?: boolean;
 }
 
-export function TransactionItem({ transaction: tx, onDelete, onPress, onLongPress, checked, onToggle }: Props) {
+export function TransactionItem({ transaction: tx, onDelete, onPress, onLongPress, checked, onToggle, hideAmount }: Props) {
   const isIncome = tx.type === 'income';
   const label    = tx.merchant || tx.note || tx.category_name || 'Transaction';
   const color    = tx.category_color || colors.dark.textSubtle;
@@ -57,7 +58,7 @@ export function TransactionItem({ transaction: tx, onDelete, onPress, onLongPres
       </View>
       <View style={s.right}>
         <Text style={[s.amount, { color: isIncome ? colors.success : colors.dark.text }, checked === false && s.amountDim]}>
-          {isIncome ? '+' : '-'}€{tx.amount.toFixed(2)}
+          {hideAmount ? '€ ••••' : `${isIncome ? '+' : '-'}€${tx.amount.toFixed(2)}`}
         </Text>
         {onDelete && (
           <TouchableOpacity onPress={onDelete} style={s.del}>
