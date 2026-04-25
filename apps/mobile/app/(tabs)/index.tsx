@@ -4,6 +4,7 @@ import {
   ScrollView, View, Text, StyleSheet, RefreshControl,
   TouchableOpacity, Modal, TextInput, Alert, FlatList, PanResponder,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
@@ -18,7 +19,7 @@ import {
 } from '../../src/db/queries';
 import { useQuery } from '../../src/hooks/useQuery';
 import { useTheme } from '../../src/theme/useTheme';
-import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
+import { colors as staticColors, spacing, radius, typography, shadow } from '../../src/theme';
 import { TransactionItem } from '../../src/components/TransactionItem';
 import { SpendingChart } from '../../src/components/SpendingChart';
 
@@ -202,7 +203,7 @@ export default function DashboardScreen() {
   }
 
   async function openBalanceModal() {
-    const d = await getMonthTransactionDetails();
+    const d = await getMonthTransactionDetails(viewMonth, viewYear);
     setBalanceData(d);
     setBalanceModalVisible(true);
   }
@@ -275,41 +276,56 @@ export default function DashboardScreen() {
       </View>
 
       {/* Balance Card */}
-      <TouchableOpacity style={s.balanceCard} onPress={openBalanceModal} activeOpacity={0.85}>
-        {(data?.opening_balance ?? 0) !== 0 && (
-          <Text style={s.rolloverLabel}>
-            {(data!.opening_balance) >= 0 ? '↩' : '⚠'} {sign(data!.opening_balance)}{fmt(data!.opening_balance)} {(data!.opening_balance) >= 0 ? 'leftover' : 'debt'} from {data?.rollover_from_month ?? ''}
+      <TouchableOpacity onPress={openBalanceModal} activeOpacity={0.92} style={{ marginBottom: spacing.md }}>
+        <LinearGradient
+          colors={['#5b5ef4', '#8b5cf6']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.balanceCard}
+        >
+          <View style={s.cardOrb1} />
+          <View style={s.cardOrb2} />
+          {(data?.opening_balance ?? 0) !== 0 && (
+            <View style={s.rolloverChip}>
+              <Text style={s.rolloverLabel}>
+                {(data!.opening_balance) >= 0 ? '↩' : '⚠'} {sign(data!.opening_balance)}{fmt(data!.opening_balance)} {(data!.opening_balance) >= 0 ? 'leftover' : 'deficit'} from {data?.rollover_from_month ?? ''}
+              </Text>
+            </View>
+          )}
+          <Text style={s.balanceLabel}>Available Balance</Text>
+          <Text style={[s.balanceAmount, (data?.available ?? 0) < 0 && { color: '#fca5a5' }]}>
+            {incomeHidden() ? '€ ••••' : `${sign(data?.available ?? 0)}${fmt(data?.available ?? 0)}`}
           </Text>
-        )}
-        <Text style={s.balanceLabel}>Available Balance  <Text style={{ fontSize: 11, opacity: 0.6 }}>tap for details</Text></Text>
-        <Text style={[s.balanceAmount, (data?.available ?? 0) < 0 && { color: '#fca5a5' }]}>
-          {incomeHidden() ? '€ ••••' : `${sign(data?.available ?? 0)}${fmt(data?.available ?? 0)}`}
-        </Text>
-        <View style={s.balanceRow}>
-          <StatChip icon="arrow-down-circle" label="Income"
-            value={incomeHidden() ? '€ ••••' : fmt(data?.income?.this_month ?? 0)}
-            color={staticColors.success} />
-          <View style={s.statDivider} />
-          <StatChip icon="arrow-up-circle" label="Expenses" value={fmt(data?.expense?.this_month ?? 0)} color={staticColors.danger} />
-          <View style={s.statDivider} />
-          <StatChip icon="trending-up" label="Net"
-            value={incomeHidden() ? '€ ••••' : `${sign(data?.balance ?? 0)}${fmt(data?.balance ?? 0)}`}
-            color={(data?.balance ?? 0) >= 0 ? staticColors.success : staticColors.danger} />
-        </View>
+          <View style={s.statDividerH} />
+          <View style={s.balanceRow}>
+            <StatChip icon="arrow-down-circle" label="Income"
+              value={incomeHidden() ? '€ ••••' : fmt(data?.income?.this_month ?? 0)}
+              color="#34d399" />
+            <View style={s.statDivider} />
+            <StatChip icon="arrow-up-circle" label="Expenses" value={fmt(data?.expense?.this_month ?? 0)} color="#f87171" />
+            <View style={s.statDivider} />
+            <StatChip icon="trending-up" label="Net"
+              value={incomeHidden() ? '€ ••••' : `${sign(data?.balance ?? 0)}${fmt(data?.balance ?? 0)}`}
+              color={(data?.balance ?? 0) >= 0 ? '#34d399' : '#f87171'} />
+          </View>
+          <Text style={s.tapHint}>tap for details</Text>
+        </LinearGradient>
       </TouchableOpacity>
 
       {/* Month Projection + Savings */}
       <View style={s.twoColRow}>
         {projection && (
           <View style={[s.halfCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[s.projLabel, { color: colors.textMuted }]}>Month leftover</Text>
+            <View style={[s.halfCardAccent, { backgroundColor: (projection.projected_balance ?? 0) >= 0 ? staticColors.success : staticColors.danger }]} />
+            <Text style={[s.projLabel, { color: colors.textMuted }]}>Projected</Text>
             <Text style={[s.projAmount, { color: (projection.projected_balance ?? 0) >= 0 ? staticColors.success : staticColors.danger }]}>
               {incomeHidden() ? '€ ••••' : `${sign(projection.projected_balance ?? 0)}${fmt(projection.projected_balance ?? 0)}`}
             </Text>
-            <Text style={[s.projDays, { color: colors.textSubtle }]}>{projection.days_left}d left</Text>
+            <Text style={[s.projDays, { color: colors.textSubtle }]}>{projection.days_left} days left</Text>
           </View>
         )}
         <View style={[s.halfCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[s.halfCardAccent, { backgroundColor: staticColors.warning }]} />
           <Text style={[s.projLabel, { color: colors.textMuted }]}>Savings</Text>
           <Text style={[s.projAmount, { color: staticColors.warning }]}>
             {incomeHidden() ? '€ ••••' : fmt(savingsSummary?.this_month ?? 0)}
@@ -424,12 +440,16 @@ export default function DashboardScreen() {
       {/* Quick Links */}
       <View style={s.quickRow}>
         <TouchableOpacity style={[s.quickBtn, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => router.push('/fuel-tracker')}>
-          <Ionicons name="car-outline" size={18} color={staticColors.primary} />
-          <Text style={[s.quickLabel, { color: colors.text }]}>Fuel</Text>
+          <View style={[s.quickIconWrap, { backgroundColor: staticColors.primary + '18' }]}>
+            <Ionicons name="car-outline" size={20} color={staticColors.primary} />
+          </View>
+          <Text style={[s.quickLabel, { color: colors.text }]}>Fuel Tracker</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[s.quickBtn, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => router.push('/year-overview')}>
-          <Ionicons name="bar-chart-outline" size={18} color={staticColors.primary} />
-          <Text style={[s.quickLabel, { color: colors.text }]}>Year</Text>
+          <View style={[s.quickIconWrap, { backgroundColor: staticColors.primary + '18' }]}>
+            <Ionicons name="bar-chart-outline" size={20} color={staticColors.primary} />
+          </View>
+          <Text style={[s.quickLabel, { color: colors.text }]}>Year Overview</Text>
         </TouchableOpacity>
       </View>
 
@@ -657,10 +677,12 @@ export default function DashboardScreen() {
 
 function StatChip({ icon, label, value, color }: { icon: any; label: string; value: string; color: string }) {
   return (
-    <View style={{ alignItems: 'center', gap: 4 }}>
-      <Ionicons name={icon} size={16} color={color} />
-      <Text style={{ ...typography.xs, color: 'rgba(255,255,255,0.7)' }}>{label}</Text>
-      <Text style={{ ...typography.sm, color, fontWeight: '600' }}>{value}</Text>
+    <View style={{ alignItems: 'center', gap: 3, flex: 1 }}>
+      <View style={{ backgroundColor: color + '25', borderRadius: radius.full, padding: 5 }}>
+        <Ionicons name={icon} size={14} color={color} />
+      </View>
+      <Text style={{ ...typography.xs, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>{label}</Text>
+      <Text style={{ ...typography.sm, color: '#fff', fontWeight: '700', textAlign: 'center' }}>{value}</Text>
     </View>
   );
 }
@@ -670,24 +692,38 @@ const s = StyleSheet.create({
   content:           { padding: spacing.md, paddingBottom: 100 },
   header:            { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg, paddingTop: spacing.xl },
   monthNav:          { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  navArrow:          { padding: 4 },
-  title:             { ...typography['2xl'], fontWeight: '700' },
+  navArrow:          { padding: 6 },
+  title:             { ...typography['2xl'], fontWeight: '800', letterSpacing: -0.5 },
   subtitle:          { ...typography.sm, marginTop: 2 },
-  headerRight:       { flexDirection: 'row', gap: spacing.sm },
-  iconBtn:           { width: 36, height: 36, borderRadius: radius.full, justifyContent: 'center', alignItems: 'center' },
-  balanceCard:       { backgroundColor: staticColors.primary, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md },
-  rolloverLabel:     { ...typography.xs, color: 'rgba(255,255,255,0.6)', marginBottom: spacing.xs },
-  balanceLabel:      { ...typography.sm, color: 'rgba(255,255,255,0.75)', marginBottom: spacing.xs },
-  balanceAmount:     { ...typography['3xl'], color: '#fff', fontWeight: '700', marginBottom: spacing.md },
-  balanceRow:        { flexDirection: 'row', justifyContent: 'space-around' },
-  statDivider:       { width: 1, backgroundColor: 'rgba(255,255,255,0.2)' },
+  headerRight:       { flexDirection: 'row', gap: spacing.xs },
+  iconBtn:           { width: 38, height: 38, borderRadius: radius.full, justifyContent: 'center', alignItems: 'center' },
+
+  // Balance card
+  balanceCard:       { borderRadius: radius.xl, padding: spacing.lg, paddingBottom: spacing.md, overflow: 'hidden', ...shadow.primary },
+  cardOrb1:          { position: 'absolute', width: 180, height: 180, borderRadius: 90, backgroundColor: 'rgba(255,255,255,0.06)', top: -60, right: -40 },
+  cardOrb2:          { position: 'absolute', width: 120, height: 120, borderRadius: 60, backgroundColor: 'rgba(255,255,255,0.05)', bottom: -30, left: 20 },
+  rolloverChip:      { alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 3, marginBottom: spacing.sm },
+  rolloverLabel:     { ...typography.xs, color: 'rgba(255,255,255,0.85)' },
+  balanceLabel:      { ...typography.sm, color: 'rgba(255,255,255,0.65)', marginBottom: spacing.xs, fontWeight: '500' },
+  balanceAmount:     { ...typography['3xl'], color: '#fff', fontWeight: '800', marginBottom: spacing.md, letterSpacing: -1 },
+  statDividerH:      { height: 1, backgroundColor: 'rgba(255,255,255,0.15)', marginBottom: spacing.md },
+  balanceRow:        { flexDirection: 'row', justifyContent: 'space-around', gap: spacing.xs },
+  statDivider:       { width: 1, backgroundColor: 'rgba(255,255,255,0.15)', alignSelf: 'stretch' },
+  tapHint:           { ...typography.xs, color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: spacing.sm },
+
+  // Two-col cards
   twoColRow:         { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  halfCard:          { flex: 1, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1 },
-  projLabel:         { ...typography.xs, marginBottom: 4 },
-  projAmount:        { ...typography.xl, fontWeight: '700' },
-  projDays:          { ...typography.xs, marginTop: 2 },
-  track:             { height: 6, borderRadius: radius.full, overflow: 'hidden' },
+  halfCard:          { flex: 1, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, overflow: 'hidden' },
+  halfCardAccent:    { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, borderTopLeftRadius: radius.lg, borderBottomLeftRadius: radius.lg },
+  projLabel:         { ...typography.xs, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: spacing.xs },
+  projAmount:        { ...typography.xl, fontWeight: '800', letterSpacing: -0.5 },
+  projDays:          { ...typography.xs, marginTop: 4 },
+
+  // Progress tracks
+  track:             { height: 8, borderRadius: radius.full, overflow: 'hidden' },
   trackBar:          { height: '100%', borderRadius: radius.full },
+
+  // Daily log
   dailyLogCard:      { borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1 },
   dailyLogHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   todayBadge:        { borderRadius: radius.full, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 3, alignItems: 'flex-end' },
@@ -706,22 +742,33 @@ const s = StyleSheet.create({
   spendEntryNote:    { ...typography.xs, marginTop: 1 },
   spendEntryTime:    { ...typography.xs, marginRight: spacing.xs },
   emptySmall:        { ...typography.xs, textAlign: 'center', paddingVertical: spacing.sm },
+
+  // Quick links
   quickRow:          { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  quickBtn:          { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderWidth: 1, borderRadius: radius.lg, padding: spacing.sm, justifyContent: 'center' },
-  quickLabel:        { ...typography.xs, fontWeight: '600' },
-  upcomingRow:       { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.xs },
+  quickBtn:          { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderRadius: radius.lg, paddingVertical: spacing.md, paddingHorizontal: spacing.md, justifyContent: 'flex-start' },
+  quickIconWrap:     { width: 36, height: 36, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center' },
+  quickLabel:        { ...typography.sm, fontWeight: '600' },
+
+  // Upcoming
+  upcomingRow:       { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderRadius: radius.lg, padding: spacing.sm, marginBottom: spacing.xs },
   upcomingDot:       { width: 8, height: 8, borderRadius: 4 },
   upcomingName:      { ...typography.sm, fontWeight: '600' },
   upcomingDate:      { ...typography.xs },
   upcomingAmount:    { ...typography.sm, fontWeight: '700' },
+
+  // Sections
   section:           { marginBottom: spacing.lg },
   sectionRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
-  sectionTitle:      { ...typography.lg, fontWeight: '600' },
-  seeAll:            { ...typography.sm, color: staticColors.primary },
+  sectionTitle:      { ...typography.lg, fontWeight: '700' },
+  seeAll:            { ...typography.sm, color: staticColors.primary, fontWeight: '600' },
   empty:             { ...typography.sm, textAlign: 'center', marginTop: spacing.md },
-  fab:               { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, backgroundColor: staticColors.primary, justifyContent: 'center', alignItems: 'center', shadowColor: staticColors.primary, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
-  modalOverlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalSheet:        { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: 40, maxHeight: '85%' },
+
+  // FAB
+  fab:               { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 58, height: 58, borderRadius: radius.full, backgroundColor: staticColors.primary, justifyContent: 'center', alignItems: 'center', ...shadow.primary },
+
+  // Modals
+  modalOverlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  modalSheet:        { borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, padding: spacing.lg, paddingBottom: 40, maxHeight: '85%' },
   modalHeaderRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
   modalTitle:        { ...typography.lg, fontWeight: '700' },
   modalTotals:       { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: spacing.md },

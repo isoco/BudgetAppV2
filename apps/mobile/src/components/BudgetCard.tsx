@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radius, typography } from '../theme';
+import { useTheme } from '../theme/useTheme';
+import { colors as staticColors, spacing, radius, typography, shadow } from '../theme';
 
 interface Budget {
   id: string;
@@ -21,9 +22,10 @@ interface Props {
 }
 
 export function BudgetCard({ budget: b, onAddExpense }: Props) {
+  const { colors } = useTheme();
   const isOver  = b.pct >= 100;
   const isWarn  = b.pct >= 80;
-  const barColor = isOver ? colors.danger : isWarn ? colors.warning : colors.success;
+  const barColor = isOver ? staticColors.danger : isWarn ? staticColors.warning : staticColors.success;
 
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount]     = useState('');
@@ -45,61 +47,67 @@ export function BudgetCard({ budget: b, onAddExpense }: Props) {
   }
 
   return (
-    <View style={s.card}>
-      <View style={s.row}>
-        <View style={[s.icon, { backgroundColor: b.category_color + '22' }]}>
-          <Text style={s.iconText}>{iconToEmoji(b.category_icon)}</Text>
-        </View>
-        <View style={s.body}>
-          <Text style={s.name}>{b.category_name}</Text>
-          <Text style={s.sub}>
-            €{b.spent.toFixed(2)} of €{parseFloat(b.amount).toFixed(2)}
-          </Text>
-        </View>
-        <View style={s.right}>
-          <Text style={[s.pct, { color: barColor }]}>{b.pct}%</Text>
-          <Text style={[s.remaining, { color: isOver ? colors.danger : colors.dark.textMuted }]}>
-            {isOver ? `-€${Math.abs(b.remaining).toFixed(2)}` : `€${b.remaining.toFixed(2)} left`}
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => setShowForm(v => !v)}
-          style={[s.addBtn, { backgroundColor: showForm ? colors.dark.surfaceHigh : colors.primary + '22' }]}
-        >
-          <Ionicons name={showForm ? 'close' : 'add'} size={18} color={showForm ? colors.dark.textMuted : colors.primary} />
-        </TouchableOpacity>
-      </View>
+    <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      {/* Left accent stripe */}
+      <View style={[s.accentStripe, { backgroundColor: b.category_color }]} />
 
-      <View style={s.track}>
-        <View style={[s.bar, { width: `${Math.min(100, b.pct)}%` as any, backgroundColor: barColor }]} />
-      </View>
-
-      {showForm && (
-        <View style={s.form}>
-          <TextInput
-            style={s.amtInput}
-            placeholder="€ Amount"
-            placeholderTextColor={colors.dark.textSubtle}
-            keyboardType="decimal-pad"
-            value={amount}
-            onChangeText={setAmount}
-          />
-          <TextInput
-            style={s.noteInput}
-            placeholder="Note (optional)"
-            placeholderTextColor={colors.dark.textSubtle}
-            value={note}
-            onChangeText={setNote}
-          />
+      <View style={s.inner}>
+        <View style={s.row}>
+          <View style={[s.icon, { backgroundColor: b.category_color + '20' }]}>
+            <Text style={s.iconText}>{iconToEmoji(b.category_icon)}</Text>
+          </View>
+          <View style={s.body}>
+            <Text style={[s.name, { color: colors.text }]}>{b.category_name}</Text>
+            <Text style={[s.sub, { color: colors.textMuted }]}>
+              €{b.spent.toFixed(2)} <Text style={{ color: colors.textSubtle }}>of €{parseFloat(b.amount).toFixed(2)}</Text>
+            </Text>
+          </View>
+          <View style={s.right}>
+            <Text style={[s.pct, { color: barColor }]}>{b.pct}%</Text>
+            <Text style={[s.remaining, { color: isOver ? staticColors.danger : colors.textMuted }]}>
+              {isOver ? `-€${Math.abs(b.remaining).toFixed(2)}` : `€${b.remaining.toFixed(2)} left`}
+            </Text>
+          </View>
           <TouchableOpacity
-            style={[s.saveBtn, { backgroundColor: colors.primary, opacity: saving ? 0.6 : 1 }]}
-            onPress={handleAdd}
-            disabled={saving}
+            onPress={() => setShowForm(v => !v)}
+            style={[s.addBtn, { backgroundColor: showForm ? colors.surfaceHigh : staticColors.primary + '18' }]}
           >
-            <Text style={s.saveBtnText}>Add</Text>
+            <Ionicons name={showForm ? 'close' : 'add'} size={18} color={showForm ? colors.textMuted : staticColors.primary} />
           </TouchableOpacity>
         </View>
-      )}
+
+        {/* Progress bar */}
+        <View style={[s.track, { backgroundColor: colors.surfaceHigh }]}>
+          <View style={[s.bar, { width: `${Math.min(100, b.pct)}%` as any, backgroundColor: barColor }]} />
+        </View>
+
+        {showForm && (
+          <View style={[s.form, { borderTopColor: colors.border }]}>
+            <TextInput
+              style={[s.amtInput, { backgroundColor: colors.surfaceHigh, color: colors.text, borderColor: colors.border }]}
+              placeholder="€ Amount"
+              placeholderTextColor={colors.textSubtle}
+              keyboardType="decimal-pad"
+              value={amount}
+              onChangeText={setAmount}
+            />
+            <TextInput
+              style={[s.noteInput, { backgroundColor: colors.surfaceHigh, color: colors.text, borderColor: colors.border }]}
+              placeholder="Note (optional)"
+              placeholderTextColor={colors.textSubtle}
+              value={note}
+              onChangeText={setNote}
+            />
+            <TouchableOpacity
+              style={[s.saveBtn, { backgroundColor: staticColors.primary, opacity: saving ? 0.6 : 1 }]}
+              onPress={handleAdd}
+              disabled={saving}
+            >
+              <Text style={s.saveBtnText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -115,22 +123,24 @@ function iconToEmoji(icon: string): string {
 }
 
 const s = StyleSheet.create({
-  card:      { backgroundColor: colors.dark.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm },
-  row:       { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
-  icon:      { width: 40, height: 40, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center', marginRight: spacing.sm },
-  iconText:  { fontSize: 18 },
-  body:      { flex: 1 },
-  name:      { ...typography.base, color: colors.dark.text, fontWeight: '500' },
-  sub:       { ...typography.xs, color: colors.dark.textMuted, marginTop: 2 },
-  right:     { alignItems: 'flex-end', marginRight: spacing.sm },
-  pct:       { ...typography.sm, fontWeight: '700' },
-  remaining: { ...typography.xs },
-  addBtn:    { width: 30, height: 30, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center' },
-  track:     { height: 6, backgroundColor: colors.dark.surfaceHigh, borderRadius: radius.full, overflow: 'hidden' },
-  bar:       { height: '100%', borderRadius: radius.full },
-  form:      { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.sm, alignItems: 'center' },
-  amtInput:  { width: 90, backgroundColor: colors.dark.surfaceHigh, color: colors.dark.text, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 6, fontSize: 14 },
-  noteInput: { flex: 1, backgroundColor: colors.dark.surfaceHigh, color: colors.dark.text, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 6, fontSize: 14 },
-  saveBtn:   { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.md },
+  card:        { borderRadius: radius.lg, marginBottom: spacing.sm, borderWidth: 1, flexDirection: 'row', overflow: 'hidden' },
+  accentStripe:{ width: 3 },
+  inner:       { flex: 1, padding: spacing.md },
+  row:         { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  icon:        { width: 42, height: 42, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center', marginRight: spacing.sm },
+  iconText:    { fontSize: 19 },
+  body:        { flex: 1 },
+  name:        { ...typography.base, fontWeight: '600' },
+  sub:         { ...typography.xs, marginTop: 2 },
+  right:       { alignItems: 'flex-end', marginRight: spacing.sm },
+  pct:         { ...typography.sm, fontWeight: '800' },
+  remaining:   { ...typography.xs, marginTop: 1 },
+  addBtn:      { width: 32, height: 32, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center' },
+  track:       { height: 8, borderRadius: radius.full, overflow: 'hidden' },
+  bar:         { height: '100%', borderRadius: radius.full },
+  form:        { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.sm, alignItems: 'center', paddingTop: spacing.sm, borderTopWidth: 1 },
+  amtInput:    { width: 90, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 7, fontSize: 14, borderWidth: 1 },
+  noteInput:   { flex: 1, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 7, fontSize: 14, borderWidth: 1 },
+  saveBtn:     { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.md },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

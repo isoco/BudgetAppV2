@@ -70,10 +70,14 @@ export interface UpcomingItem {
 export async function getCategories(opts?: { includeInactive?: boolean; type?: string }): Promise<Category[]> {
   const db = await getDb();
   const conditions: string[] = [];
+  const params: string[] = [];
   if (!opts?.includeInactive) conditions.push('(c.is_active = 1 OR c.is_system = 1)');
-  if (opts?.type && opts.type !== 'both') conditions.push(`c.type IN ('${opts.type}','both')`);
+  if (opts?.type && opts.type !== 'both') {
+    conditions.push(`c.type IN (?, 'both')`);
+    params.push(opts.type);
+  }
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-  return db.getAllAsync<Category>(`SELECT * FROM categories c ${where} ORDER BY c.is_system DESC, c.name`);
+  return db.getAllAsync<Category>(`SELECT * FROM categories c ${where} ORDER BY c.is_system DESC, c.name`, params);
 }
 
 export async function createCategory(data: Omit<Category, 'id' | 'is_system' | 'is_active'>): Promise<Category> {
@@ -1000,8 +1004,12 @@ export async function rolloverFromPreviousMonth(): Promise<{ amount: number; fro
     db.getAllAsync<any>('SELECT key, value FROM settings'),
   ]);
 
-  const cfg: Record<string, number> = {};
-  for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
+  const cfg: Record<string, string> = {};
+  for (const r of settingsRows) cfg[r.key] = r.value;
+
+  if ((cfg.auto_rollover ?? '1') !== '1') {
+    return { amount: 0, fromMonth: prev.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) };
+  }
 
   const prevOpening = prevMb[0]?.opening_balance ?? 0;
   const prevIncome  = prevTotals[0]?.income  ?? 0;
@@ -1009,60 +1017,13 @@ export async function rolloverFromPreviousMonth(): Promise<{ amount: number; fro
   const closing     = prevOpening + prevIncome - prevExpense;
   const rollover    = closing;
 
-  await setMonthBalance(m, y, rollover, cfg.monthly_savings ?? 0);
+  await setMonthBalance(m, y, rollover, parseFloat(cfg.monthly_savings ?? '0') || 0);
   return {
     amount: rollover,
     fromMonth: prev.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
   };
 }
 
-export async function transferLastMonthBalance(): Promise<{ amount: number; created: boolean }> {
-  const db  = await getDb();
-  const now = new Date();
-  const m   = now.getMonth() + 1;
-  const y   = now.getFullYear();
-  const firstOfMonth = `${y}-${String(m).padStart(2,'0')}-01`;
-
-  // Idempotent: skip if already created
-  const existing = await db.getAllAsync<{ id: string }>(
-    `SELECT id FROM transactions WHERE type='income' AND note='Last Month Balance' AND strftime('%Y-%m', date) = ?`,
-    [`${y}-${String(m).padStart(2,'0')}`]
-  );
-  if (existing.length > 0) return { amount: 0, created: false };
-
-  const prev         = new Date(y, m - 2, 1);
-  const prevM        = prev.getMonth() + 1;
-  const prevY        = prev.getFullYear();
-  const prevMonthStr = `${prevY}-${String(prevM).padStart(2,'0')}`;
-
-  const [prevTotals, prevMb, settingsRows] = await Promise.all([
-    db.getAllAsync<any>(
-      `SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) AS income,
-              COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS expense
-       FROM transactions WHERE strftime('%Y-%m', date) = ?`,
-      [prevMonthStr]
-    ),
-    db.getAllAsync<MonthBalance>('SELECT * FROM month_balances WHERE month=? AND year=?', [prevM, prevY]),
-    db.getAllAsync<any>('SELECT key, value FROM settings'),
-  ]);
-
-  const cfg: Record<string, number> = {};
-  for (const r of settingsRows) cfg[r.key] = parseFloat(r.value) || 0;
-
-  const prevOpening = prevMb[0]?.opening_balance ?? 0;
-  const prevIncome  = prevTotals[0]?.income  ?? 0;
-  const prevExpense = prevTotals[0]?.expense ?? 0;
-  const balance     = prevOpening + prevIncome - prevExpense;
-  const amount      = balance;
-
-  if (amount === 0) return { amount: 0, created: false };
-
-  await db.runAsync(
-    'INSERT INTO transactions (id, amount, type, date, note) VALUES (?,?,?,?,?)',
-    [uuid(), amount, 'income', firstOfMonth, 'Last Month Balance']
-  );
-  return { amount, created: true };
-}
 
 export async function getMonthDetail(month: number, year: number): Promise<{
   transactions: Transaction[];
@@ -1302,13 +1263,15 @@ export async function getTodayTransactions(): Promise<Transaction[]> {
   );
 }
 
-export async function getMonthTransactionDetails(): Promise<{
+export async function getMonthTransactionDetails(month?: number, year?: number): Promise<{
   income: Transaction[]; expense: Transaction[];
   totalIncome: number; totalExpense: number;
 }> {
   const db  = await getDb();
   const now = new Date();
-  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const m   = month ?? (now.getMonth() + 1);
+  const y   = year  ?? now.getFullYear();
+  const key = `${y}-${String(m).padStart(2, '0')}`;
   const all = await db.getAllAsync<Transaction>(
     `${TX_SELECT} WHERE strftime('%Y-%m', t.date) = ? ORDER BY t.date DESC, t.created_at DESC`,
     [key]
@@ -1340,6 +1303,7 @@ export async function importAllData(json: string): Promise<void> {
       DELETE FROM month_balances;
       DELETE FROM daily_tracking;
       DELETE FROM fuel_entries;
+      DELETE FROM daily_spends;
       DELETE FROM categories WHERE is_system = 0;
     `);
     for (const r of (d.categories || [])) {
@@ -1382,8 +1346,14 @@ export async function importAllData(json: string): Promise<void> {
     }
     for (const r of (d.fuel_entries || [])) {
       await db.runAsync(
-        'INSERT OR IGNORE INTO fuel_entries (id,year,month,date,vehicle,amount,liters,price_per_liter,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-        [r.id,r.year,r.month,r.date,r.vehicle??'Car',r.amount,r.liters??null,r.price_per_liter??null,r.notes??null,r.created_at??new Date().toISOString()]
+        'INSERT OR IGNORE INTO fuel_entries (id,year,month,date,vehicle,amount,liters,price_per_liter,notes,created_at,transaction_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        [r.id,r.year,r.month,r.date,r.vehicle??'Car',r.amount,r.liters??null,r.price_per_liter??null,r.notes??null,r.created_at??new Date().toISOString(),r.transaction_id??null]
+      );
+    }
+    for (const r of (d.daily_spends || [])) {
+      await db.runAsync(
+        'INSERT OR IGNORE INTO daily_spends (id,date,amount,note,created_at,transaction_id) VALUES (?,?,?,?,?,?)',
+        [r.id,r.date,r.amount,r.note??null,r.created_at??new Date().toISOString(),r.transaction_id??null]
       );
     }
     await db.execAsync('COMMIT');

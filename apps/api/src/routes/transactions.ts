@@ -50,6 +50,22 @@ transactionsRouter.get('/',
   }
 );
 
+// GET /api/transactions/summary/monthly  →  totals per month
+transactionsRouter.get('/summary/monthly', async (req: AuthRequest, res: Response) => {
+  const { rows } = await db.query(
+    `SELECT
+       DATE_TRUNC('month', date) AS month,
+       type,
+       SUM(amount) AS total
+     FROM transactions
+     WHERE user_id = $1 AND date >= NOW() - INTERVAL '12 months'
+     GROUP BY 1, 2
+     ORDER BY 1`,
+    [req.user!.id]
+  );
+  res.json(rows);
+});
+
 // GET /api/transactions/:id
 transactionsRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   const { rows } = await db.query(
@@ -112,20 +128,4 @@ transactionsRouter.delete('/:id', async (req: AuthRequest, res: Response) => {
   );
   if (!rowCount) return res.status(404).json({ error: 'Not found' });
   res.status(204).end();
-});
-
-// GET /api/transactions/summary/monthly  →  totals per month
-transactionsRouter.get('/summary/monthly', async (req: AuthRequest, res: Response) => {
-  const { rows } = await db.query(
-    `SELECT
-       DATE_TRUNC('month', date) AS month,
-       type,
-       SUM(amount) AS total
-     FROM transactions
-     WHERE user_id = $1 AND date >= NOW() - INTERVAL '12 months'
-     GROUP BY 1, 2
-     ORDER BY 1`,
-    [req.user!.id]
-  );
-  res.json(rows);
 });

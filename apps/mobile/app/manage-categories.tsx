@@ -162,7 +162,7 @@ export default function ManageCategoriesScreen() {
             spacing={spacing}
             radius={radius}
             typography={typography}
-            onEdit={() => openEdit(cat)}
+            onEdit={() => {}}
             onDelete={() => {}}
             onToggleActive={() => handleToggleActive(cat)}
             showDelete={false}
