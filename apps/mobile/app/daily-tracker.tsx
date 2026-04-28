@@ -9,7 +9,7 @@ import { format } from 'date-fns';
 import { useTheme } from '../src/theme/useTheme';
 import {
   getDailyTracking, initDailyTracking, upsertDailyEntry, getSettings, DailyEntry,
-  getMonthExpenseTotalsByDay, createTransaction, getTransactions,
+  getDailySpendTotalsByDay, createTransaction, getTransactions,
   getCategories, Category, Transaction,
 } from '../src/db/queries';
 
@@ -45,7 +45,7 @@ export default function DailyTrackerScreen() {
     await initDailyTracking(year, month, da);
     const [data, totals, cats] = await Promise.all([
       getDailyTracking(year, month),
-      getMonthExpenseTotalsByDay(year, month),
+      getDailySpendTotalsByDay(year, month),
       getCategories({ type: 'expense' }),
     ]);
     setEntries(data);
@@ -114,7 +114,7 @@ export default function DailyTrackerScreen() {
       setAddNote('');
       setAddCatId(null);
       const [totals, data, txs] = await Promise.all([
-        getMonthExpenseTotalsByDay(year, month),
+        getDailySpendTotalsByDay(year, month),
         getDailyTracking(year, month),
         getTransactions({ from: dateStr, to: dateStr, type: 'expense', limit: 100 }),
       ]);
@@ -177,7 +177,7 @@ export default function DailyTrackerScreen() {
           {cells.map((day, idx) => {
             if (day === null) return <View key={`e${idx}`} style={s.emptyCell} />;
             const entry     = entryMap[day];
-            const spent     = entry?.spent_amount ?? 0;
+            const spent     = txTotals[day] ?? 0;
             const allowed   = entry?.allowed_amount ?? defaultAllowed;
             const isToday   = day === today;
             const isOver    = spent > 0 && spent > allowed;

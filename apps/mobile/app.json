@@ -36,7 +36,26 @@
         }
       ],
       "expo-font",
-      "expo-local-authentication"
+      "expo-local-authentication",
+      [
+        "react-native-android-widget",
+        {
+          "widgetTaskHandlerPath": "./src/widget/widgetTaskHandler",
+          "widgets": [
+            {
+              "name": "DailyLog",
+              "label": "Daily Spending",
+              "description": "Quickly log and view your daily expenses",
+              "thumbnail": "./assets/icon.png",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

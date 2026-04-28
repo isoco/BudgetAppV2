@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   ScrollView, View, Text, StyleSheet, RefreshControl,
@@ -60,15 +60,21 @@ export default function DashboardScreen() {
 
   // ── privacy (global store) ────────────────────────────────────────────────
   const { privacyEnabled, isLocked, biometricEnabled, hideCats, setPrivacy } = usePrivacyStore();
+  const privacyInitialized = useRef(false);
 
   const loadPrivacy = useCallback(async () => {
     const s = await getSettings();
-    setPrivacy({
+    // Only reset isLocked on first load — preserve unlocked state across tab switches
+    const patch: Parameters<typeof setPrivacy>[0] = {
       privacyEnabled:   s.privacy_hide_income,
       biometricEnabled: s.privacy_biometric,
       hideCats:         s.privacy_hide_cats ?? 'all',
-      isLocked:         true,
-    });
+    };
+    if (!privacyInitialized.current) {
+      patch.isLocked = true;
+      privacyInitialized.current = true;
+    }
+    setPrivacy(patch);
   }, []);
 
   async function handleLockToggle() {
@@ -494,7 +500,7 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
         {data?.recent_transactions?.map((tx: any) => (
-          <TransactionItem key={tx.id} transaction={tx} />
+          <TransactionItem key={tx.id} transaction={tx} hideAmount={incomeHidden() && tx.type === 'income'} />
         ))}
         {(data?.recent_transactions?.length ?? 0) === 0 && !loading && (
           <Text style={[s.empty, { color: colors.textMuted }]}>No transactions yet</Text>

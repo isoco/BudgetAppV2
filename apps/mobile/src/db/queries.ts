@@ -1231,6 +1231,17 @@ export async function getDailySpendTotal(date: string): Promise<number> {
   return rows[0]?.total ?? 0;
 }
 
+export async function getDailySpendTotalsByDay(year: number, month: number): Promise<Record<number, number>> {
+  const db = await getDb();
+  const key = `${year}-${String(month).padStart(2, '0')}`;
+  const rows = await db.getAllAsync<{ day: number; total: number }>(
+    `SELECT CAST(strftime('%d', date) AS INTEGER) AS day, COALESCE(SUM(amount), 0) AS total
+     FROM daily_spends WHERE strftime('%Y-%m', date) = ? GROUP BY day`,
+    [key]
+  );
+  return Object.fromEntries(rows.map(r => [r.day, r.total]));
+}
+
 export async function createDailySpend(data: { date: string; amount: number; note?: string | null }): Promise<void> {
   const db = await getDb();
   const txId = uuid();

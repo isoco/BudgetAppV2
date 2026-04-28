@@ -8,13 +8,14 @@ import {
   getTransactions, deleteTransaction, deleteAllRecurringByCategory,
   deleteRecurringFuture, deleteRecurringPast,
   markTransactionPaid, markTransactionUnchecked, cascadeOpeningBalances, Transaction,
+  getBudgets,
 } from '../../src/db/queries';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
 import { TransactionItem } from '../../src/components/TransactionItem';
 import { useIncomeHidden } from '../../src/store/privacyStore';
 
-type Filter = 'all' | 'income' | 'expense';
+type Filter = 'all' | 'income' | 'expense' | 'budget';
 type DailyExpense = { date: string; total: number };
 type ListItem = { type: 'tx'; tx: Transaction } | { type: 'daily'; date: string; total: number };
 
@@ -41,24 +42,30 @@ export default function TransactionsScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const data = await getTransactions({
-      from:  format(startOfMonth(now), 'yyyy-MM-dd'),
-      to:    format(endOfMonth(now),   'yyyy-MM-dd'),
-      type:  filter === 'all' ? undefined : filter,
-      limit: 200,
-    });
+    const from = format(startOfMonth(now), 'yyyy-MM-dd');
+    const to   = format(endOfMonth(now),   'yyyy-MM-dd');
+
+    let data: Transaction[];
+    if (filter === 'budget') {
+      const budgets = await getBudgets(now.getMonth() + 1, now.getFullYear());
+      const budgetCatIds = new Set(budgets.map(b => b.category_id));
+      const all = await getTransactions({ from, to, type: 'expense', limit: 500 });
+      data = all.filter(tx => tx.category_id && budgetCatIds.has(tx.category_id));
+    } else {
+      data = await getTransactions({
+        from, to,
+        type:  filter === 'all' ? undefined : filter,
+        limit: 200,
+      });
+    }
 
     // Auto-check past transactions that haven't been checked and weren't manually unchecked
     const toCheck = data.filter(tx => tx.date <= today && !tx.paid_date && !tx.manually_unchecked);
     if (toCheck.length > 0) {
       await Promise.all(toCheck.map(tx => markTransactionPaid(tx.id, tx.date)));
-      // Re-fetch with updated paid_dates
-      const refreshed = await getTransactions({
-        from:  format(startOfMonth(now), 'yyyy-MM-dd'),
-        to:    format(endOfMonth(now),   'yyyy-MM-dd'),
-        type:  filter === 'all' ? undefined : filter,
-        limit: 200,
-      });
+      const refreshed = filter === 'budget'
+        ? data.map(tx => toCheck.find(c => c.id === tx.id) ? { ...tx, paid_date: tx.date } : tx)
+        : await getTransactions({ from, to, type: filter === 'all' ? undefined : filter, limit: 200 });
       setTransactions(refreshed);
     } else {
       setTransactions(data);
@@ -196,7 +203,7 @@ export default function TransactionsScreen() {
       </View>
 
       <View style={s.filters}>
-        {(['all', 'income', 'expense'] as Filter[]).map(f => (
+        {(['all', 'income', 'expense', 'budget'] as Filter[]).map(f => (
           <TouchableOpacity
             key={f}
             style={[s.chip, { borderColor: colors.border }, filter === f && s.chipActive]}

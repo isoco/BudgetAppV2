@@ -59,6 +59,17 @@ export default function SavingsScreen() {
   const savingsMap: Record<string, number> = {};
   for (const m of months) savingsMap[`${m.year}-${m.month}`] = m.savings;
 
+  // Past = months up to and including current month
+  const pastTotal = months
+    .filter(m => m.year < curYear || (m.year === curYear && m.month <= curMonth))
+    .reduce((s, m) => s + m.savings, 0);
+
+  // Planned = future months this year that already have savings set
+  const plannedFuture = months
+    .filter(m => m.year === curYear && m.month > curMonth)
+    .reduce((s, m) => s + m.savings, 0);
+  const yearEndPlan = pastTotal + plannedFuture;
+
   async function handleSave(month: number, year: number) {
     const num = parseFloat(editValue);
     if (isNaN(num) || num < 0) return Alert.alert('Enter a valid amount');
@@ -99,11 +110,33 @@ export default function SavingsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Total card */}
+      {/* Total saved (past months only) */}
       <View style={[s.totalCard, { backgroundColor: staticColors.primary + '18', borderColor: staticColors.primary + '44' }]}>
         <Text style={[s.totalLabel, { color: colors.textMuted }]}>Total Saved</Text>
-        <Text style={[s.totalAmount, { color: staticColors.primary }]}>{hide ? '€ ••••' : fmt(total)}</Text>
+        <Text style={[s.totalAmount, { color: staticColors.primary }]}>{hide ? '€ ••••' : fmt(pastTotal)}</Text>
       </View>
+
+      {/* Year-end plan */}
+      {yearEndPlan > 0 && (
+        <View style={[s.planCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={s.planRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.planLabel, { color: colors.textMuted }]}>Planned by end of {curYear}</Text>
+              <Text style={[s.planSub, { color: colors.textSubtle }]}>
+                {hide ? '' : `${fmt(pastTotal)} saved · ${fmt(plannedFuture)} planned ahead`}
+              </Text>
+            </View>
+            <Text style={[s.planAmount, { color: staticColors.savings }]}>
+              {hide ? '€ ••••' : fmt(yearEndPlan)}
+            </Text>
+          </View>
+          {!hide && yearEndPlan > 0 && (
+            <View style={[s.planTrack, { backgroundColor: colors.surfaceHigh }]}>
+              <View style={[s.planBar, { width: `${Math.min(100, (pastTotal / yearEndPlan) * 100).toFixed(1)}%` as any, backgroundColor: staticColors.savings }]} />
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Current month savings */}
       <View style={[s.curCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -234,6 +267,13 @@ const s = StyleSheet.create({
   totalCard:      { marginHorizontal: spacing.md, marginBottom: spacing.md, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, alignItems: 'center' },
   totalLabel:     { ...typography.sm, marginBottom: 4 },
   totalAmount:    { ...typography['3xl'], fontWeight: '800' },
+  planCard:       { marginHorizontal: spacing.md, marginBottom: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md },
+  planRow:        { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs },
+  planLabel:      { ...typography.sm, fontWeight: '600' },
+  planSub:        { ...typography.xs, marginTop: 2 },
+  planAmount:     { ...typography.xl, fontWeight: '800' },
+  planTrack:      { height: 6, borderRadius: radius.full, overflow: 'hidden', marginTop: spacing.xs },
+  planBar:        { height: '100%', borderRadius: radius.full },
   curCard:        { marginHorizontal: spacing.md, marginBottom: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md },
   curCardHeader:  { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
   curCardTitle:   { ...typography.xs, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },

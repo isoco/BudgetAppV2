@@ -1,10 +1,14 @@
 ﻿import { useEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, AppRegistry } from 'react-native';
 import { Stack } from 'expo-router';
 import { getDb } from '../src/db';
 import { getSettings } from '../src/db/queries';
 import { colors } from '../src/theme';
 import { useThemeStore } from '../src/store/themeStore';
+import { widgetTaskHandler } from '../src/widget/widgetTaskHandler';
+
+// Register the widget background task handler
+AppRegistry.registerHeadlessTask('DailyLogWidgetTaskHandler', () => widgetTaskHandler);
 
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
