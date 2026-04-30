@@ -121,10 +121,14 @@ GRADLEW="$WSL_DST/apps/mobile/android/gradlew"
 # Remove previous patch lines
 sed -i '/^export JAVA_HOME=.*jdk/d' "$GRADLEW"
 sed -i '/^echo "sdk.dir=/d' "$GRADLEW"
-# Inject after shebang: set JAVA_HOME and write local.properties with sdk.dir
-# (EAS extracts project to /tmp/..., gradlew runs there — so we write local.properties relative to gradlew)
-sed -i "1a export JAVA_HOME=\"$JAVA_HOME\"\necho \"sdk.dir=$ANDROID_HOME\" > \"\$(dirname \"\$0\")/local.properties\"" "$GRADLEW"
-echo "▶ Patched gradlew with JAVA_HOME=$JAVA_HOME + sdk.dir=$ANDROID_HOME"
+sed -i '/^export CMAKE_BUILD_PARALLEL_LEVEL=/d' "$GRADLEW"
+# Inject after shebang:
+#  - JAVA_HOME so Gradle finds the JDK
+#  - sdk.dir so Android Gradle Plugin finds the SDK
+#  - CMAKE_BUILD_PARALLEL_LEVEL=1 so cmake --build invokes ninja with -j1,
+#    preventing multiple Clang processes from exhausting RAM during native compilation
+sed -i "1a export JAVA_HOME=\"$JAVA_HOME\"\nexport CMAKE_BUILD_PARALLEL_LEVEL=1\necho \"sdk.dir=$ANDROID_HOME\" > \"\$(dirname \"\$0\")/local.properties\"" "$GRADLEW"
+echo "▶ Patched gradlew with JAVA_HOME=$JAVA_HOME + sdk.dir=$ANDROID_HOME + CMAKE_BUILD_PARALLEL_LEVEL=1"
 
 # Also write to eas.json env so EAS passes it through
 EAS_JSON="$WSL_DST/apps/mobile/eas.json"
