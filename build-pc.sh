@@ -52,7 +52,7 @@ echo "▶ Using JAVA_HOME=$JAVA_HOME"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$JAVA_HOME/bin:$PATH"
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
-WIN_SRC="/mnt/d/Projekti/BudgetAppV2"
+WIN_SRC="/mnt/c/Users/Ivan/Projekti/BudgetAppV2"
 WSL_DST="$HOME/BudgetAppV2"
 OUTPUT_DIR="/mnt/c/Users/Ivan/OneDrive/Aplikacija test"
 VERSION_FILE="$OUTPUT_DIR/.version"
@@ -87,36 +87,29 @@ rsync -a --checksum --delete \
 
 # ─── 1b. Verify sync ─────────────────────────────────────────────────────────
 echo "▶ Verifying key files synced correctly..."
-if grep -q "onToggle" "$WSL_DST/apps/mobile/src/components/TransactionItem.tsx"; then
-  echo "  ✔ TransactionItem.tsx — checkbox code present"
-else
-  echo "  ✗ TransactionItem.tsx — MISSING checkbox code! Sync failed."
-  exit 1
-fi
-if grep -q "manually_unchecked" "$WSL_DST/apps/mobile/app/(tabs)/transactions.tsx"; then
-  echo "  ✔ transactions.tsx — manually_unchecked fix present"
-else
-  echo "  ✗ transactions.tsx — MISSING manually_unchecked fix! Sync failed."
-  exit 1
-fi
-if grep -q "dayTxs" "$WSL_DST/apps/mobile/app/daily-tracker.tsx"; then
-  echo "  ✔ daily-tracker.tsx — expenses list present"
-else
-  echo "  ✗ daily-tracker.tsx — MISSING expenses list! Sync failed."
-  exit 1
-fi
-if grep -q "viewMonth" "$WSL_DST/apps/mobile/app/(tabs)/index.tsx"; then
-  echo "  ✔ index.tsx — month navigation present"
-else
-  echo "  ✗ index.tsx — MISSING month navigation! Sync failed."
-  exit 1
-fi
-if grep -q "privacy_hide_income" "$WSL_DST/apps/mobile/app/settings.tsx"; then
-  echo "  ✔ settings.tsx — privacy settings present"
-else
-  echo "  ✗ settings.tsx — MISSING privacy settings! Sync failed."
-  exit 1
-fi
+_fail=0
+check() {
+  local file="$WSL_DST/apps/mobile/$1" pattern="$2" label="$3"
+  if grep -q "$pattern" "$file" 2>/dev/null; then
+    echo "  ✔ $label"
+  else
+    echo "  ✗ $label — MISSING in $1! Sync failed."
+    _fail=1
+  fi
+}
+
+check "src/store/privacyStore.ts"              "useIncomeHidden"              "privacyStore — global privacy store"
+check "app/(tabs)/index.tsx"                   "privacyInitialized"           "index.tsx — privacy persistence fix"
+check "app/(tabs)/transactions.tsx"            "budget"                       "transactions.tsx — budget filter"
+check "app/(tabs)/savings.tsx"                 "pastTotal"                    "savings.tsx — past-only total"
+check "app/(tabs)/budget.tsx"                  "onDeleteExpense"              "budget.tsx — delete expense wired up"
+check "src/components/BudgetCard.tsx"          "onDeleteExpense"              "BudgetCard.tsx — delete expense prop"
+check "app/daily-tracker.tsx"                  "getDailySpendTotalsByDay"     "daily-tracker.tsx — daily_spends calendar fix"
+check "src/db/queries.ts"                      "getDailySpendTotalsByDay"     "queries.ts — getDailySpendTotalsByDay added"
+check "src/widget/widgetTaskHandler.ts"        "widgetTaskHandler"            "widgetTaskHandler.ts — widget task"
+check "app/_layout.tsx"                        "widgetTaskHandler"            "_layout.tsx — widget registered"
+
+[[ $_fail -eq 1 ]] && exit 1
 
 # ─── 2. Install deps ──────────────────────────────────────────────────────────
 echo "▶ Installing dependencies..."

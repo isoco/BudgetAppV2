@@ -84,7 +84,7 @@ rsync -a --delete \
 # ─── 2. Install deps ──────────────────────────────────────────────────────────
 echo "▶ Installing dependencies..."
 cd "$WSL_DST"
-pnpm install --frozen-lockfile --silent
+pnpm install --no-frozen-lockfile --silent
 
 # ─── 2b. Patch gradlew to hardcode JAVA_HOME (EAS resets env in subprocess) ───
 GRADLEW="$WSL_DST/apps/mobile/android/gradlew"
