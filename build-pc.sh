@@ -145,14 +145,66 @@ node -e "
 "
 echo "▶ Injected JAVA_HOME + ANDROID_HOME into eas.json preview env"
 
-# ─── 3. Build ─────────────────────────────────────────────────────────────────
+# ─── 2c. Ensure enough virtual memory for native C++ compilation ─────────────
+# cmake --build spawns multiple Clang processes; without swap they exhaust RAM
+# and kill the Gradle daemon. Create a 4 GB swap file if one isn't active.
+SWAP_FILE="$HOME/build-swap"
+if ! swapon --show 2>/dev/null | grep -q "$SWAP_FILE"; then
+  echo "▶ Creating 4 GB swap file (needed for C++ compilation)..."
+  if [[ ! -f "$SWAP_FILE" ]]; then
+    dd if=/dev/zero of="$SWAP_FILE" bs=1M count=4096 status=none
+    chmod 600 "$SWAP_FILE"
+    mkswap "$SWAP_FILE" -q
+  fi
+  if sudo -n swapon "$SWAP_FILE" 2>/dev/null; then
+    echo "  ✔ Swap enabled: 4 GB at $SWAP_FILE"
+  else
+    echo "  ⚠ Could not enable swap (no sudo). Build may OOM on large files."
+    echo "    Run once: sudo swapon $SWAP_FILE"
+  fi
+else
+  echo "  ✔ Swap already active"
+fi
+
+# ─── 3. Kill stale Gradle daemons ────────────────────────────────────────────
+# Gradle reuses daemons across builds. If a daemon started without
+# CMAKE_BUILD_PARALLEL_LEVEL in its env, it won't pick up the new value.
+# Kill all daemons so fresh ones start with the correct environment.
+echo "▶ Stopping Gradle daemons..."
+"$WSL_DST/apps/mobile/android/gradlew" -p "$WSL_DST/apps/mobile/android" --stop 2>/dev/null || true
+pkill -f "GradleDaemon" 2>/dev/null || true
+
+# ─── 4. Clear ALL caches ─────────────────────────────────────────────────────
 echo "▶ Clearing all caches..."
+# Metro / Expo JS bundler caches
 rm -rf "$HOME/.expo/metro-cache"
 rm -rf "$HOME/.expo/cache"
 rm -rf "$WSL_DST/apps/mobile/.expo"
 rm -rf "$WSL_DST/apps/mobile/.metro"
 rm -rf "$WSL_DST/node_modules/.cache"
-find /tmp -maxdepth 1 -name "metro-*" -o -name "haste-map-*" 2>/dev/null | xargs rm -rf
+find /tmp -maxdepth 1 \( -name "metro-*" -o -name "haste-map-*" -o -name "eas-build-*" \) 2>/dev/null | xargs rm -rf
+# Gradle build-cache — stores task output hashes; stale entries serve old JS bundles
+rm -rf "$HOME/.gradle/caches/build-cache-*"
+# Gradle transform cache — stores processed AAR/jar outputs
+rm -rf "$HOME/.gradle/caches/transforms-*"
+# EAS local tmp files from previous runs
+find /tmp/ivan -maxdepth 2 -name "*.tar.gz" 2>/dev/null | xargs rm -f
+echo "  ✔ All caches cleared"
+
+# ─── 5. Confirm synced files have latest changes ──────────────────────────────
+echo "▶ Spot-checking synced file content..."
+if grep -q "privacyInitialized" "$WSL_DST/apps/mobile/app/(tabs)/index.tsx"; then
+  echo "  ✔ index.tsx has privacy persistence fix"
+else
+  echo "  ✗ index.tsx is STALE — privacy fix not found. Aborting."
+  exit 1
+fi
+if grep -q "getDailySpendTotalsByDay" "$WSL_DST/apps/mobile/app/daily-tracker.tsx"; then
+  echo "  ✔ daily-tracker.tsx has daily_spends calendar fix"
+else
+  echo "  ✗ daily-tracker.tsx is STALE. Aborting."
+  exit 1
+fi
 
 echo "▶ Building APK (this may take a few minutes)..."
 BUILD_START=$(date +%s)
