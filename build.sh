@@ -71,7 +71,7 @@ echo ""
 
 # ─── 1. Sync ──────────────────────────────────────────────────────────────────
 echo "▶ Syncing files from $WIN_SRC..."
-rsync -a --delete \
+rsync -a --checksum --delete \
   --exclude='node_modules' \
   --exclude='.git' \
   --exclude='*.apk' \
