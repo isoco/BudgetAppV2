@@ -94,7 +94,7 @@ check "src/store/privacyStore.ts"              "useIncomeHidden"              "p
 check "app/(tabs)/index.tsx"                   "privacyInitialized"           "index.tsx — privacy persistence fix"
 check "app/(tabs)/transactions.tsx"            "budget"                       "transactions.tsx — budget filter"
 check "app/(tabs)/savings.tsx"                 "pastTotal"                    "savings.tsx — past-only total"
-check "app/(tabs)/budget.tsx"                  "onDeleteExpense"              "budget.tsx — delete expense wired up"
+check "app/(tabs)/budget.tsx"                  "viewMonth"                    "budget.tsx — month navigation"
 check "src/components/BudgetCard.tsx"          "onDeleteExpense"              "BudgetCard.tsx — delete expense prop"
 check "app/daily-tracker.tsx"                  "getDailySpendTotalsByDay"     "daily-tracker.tsx — daily_spends calendar fix"
 check "src/db/queries.ts"                      "getDailySpendTotalsByDay"     "queries.ts — getDailySpendTotalsByDay added"

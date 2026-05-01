@@ -30,6 +30,13 @@
     "uuid": "^10.0.0",
     "zustand": "^4.5.7"
   },
+  "expo": {
+    "install": {
+      "exclude": [
+        "react-native-android-widget"
+      ]
+    }
+  },
   "devDependencies": {
     "@babel/core": "^7.29.0",
     "@testing-library/react-native": "^13.3.3",

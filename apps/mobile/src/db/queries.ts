@@ -813,7 +813,7 @@ export async function getDashboardData(opts?: { month?: number; year?: number })
       GROUP BY c.id ORDER BY total DESC LIMIT 6`,
       [thisMonth]
     ),
-    db.getAllAsync<Transaction>(`${TX_SELECT} ORDER BY t.date DESC, t.created_at DESC LIMIT 5`),
+    db.getAllAsync<Transaction>(`${TX_SELECT} WHERE strftime('%Y-%m', t.date) = ? ORDER BY t.date DESC, t.created_at DESC LIMIT 5`, [thisMonth]),
     db.getAllAsync<any>('SELECT * FROM month_balances WHERE month=? AND year=?', [m, y]),
     db.getAllAsync<any>('SELECT key, value FROM settings'),
     db.getAllAsync<{ total: number }>("SELECT COALESCE(SUM(amount),0) AS total FROM daily_spends WHERE date = date('now')"),

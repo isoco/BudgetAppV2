@@ -21,7 +21,7 @@ interface Budget {
 interface Props {
   budget: Budget;
   transactions?: Transaction[];
-  onAddExpense: (categoryId: string, amount: number, note: string) => Promise<void>;
+  onAddExpense?: (categoryId: string, amount: number, note: string) => Promise<void>;
   onDeleteExpense?: (txId: string) => Promise<void>;
 }
 
@@ -37,6 +37,7 @@ export function BudgetCard({ budget: b, transactions = [], onAddExpense, onDelet
   const [saving, setSaving] = useState(false);
 
   async function handleAdd() {
+    if (!onAddExpense) return;
     const num = parseFloat(amount);
     if (!num || num <= 0) return Alert.alert('Enter a valid amount');
     setSaving(true);
@@ -88,13 +89,15 @@ export function BudgetCard({ budget: b, transactions = [], onAddExpense, onDelet
             <Ionicons name="pencil-outline" size={15} color={colors.textMuted} />
           </TouchableOpacity>
 
-          {/* Toggle add form */}
-          <TouchableOpacity
-            onPress={() => setTab(t => t === 'add' ? null : 'add')}
-            style={[s.iconBtn, { backgroundColor: tab === 'add' ? colors.surfaceHigh : staticColors.primary + '18' }]}
-          >
-            <Ionicons name={tab === 'add' ? 'close' : 'add'} size={17} color={tab === 'add' ? colors.textMuted : staticColors.primary} />
-          </TouchableOpacity>
+          {/* Toggle add form — hidden for past months */}
+          {onAddExpense && (
+            <TouchableOpacity
+              onPress={() => setTab(t => t === 'add' ? null : 'add')}
+              style={[s.iconBtn, { backgroundColor: tab === 'add' ? colors.surfaceHigh : staticColors.primary + '18' }]}
+            >
+              <Ionicons name={tab === 'add' ? 'close' : 'add'} size={17} color={tab === 'add' ? colors.textMuted : staticColors.primary} />
+            </TouchableOpacity>
+          )}
 
           {/* Toggle expense list */}
           <TouchableOpacity

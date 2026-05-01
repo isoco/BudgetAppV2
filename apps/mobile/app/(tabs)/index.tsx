@@ -305,7 +305,7 @@ export default function DashboardScreen() {
 
       {/* Month Projection + Savings */}
       <View style={s.twoColRow}>
-        {projection && (
+        {isCurrentMonth && projection && (
           <View style={[s.halfCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={[s.halfCardAccent, { backgroundColor: (projection.projected_balance ?? 0) >= 0 ? staticColors.success : staticColors.danger }]} />
             <Text style={[s.projLabel, { color: colors.textMuted }]}>Projected</Text>
@@ -445,7 +445,7 @@ export default function DashboardScreen() {
       </View>
 
       {/* Upcoming Bills */}
-      {(bills as UpcomingItem[]).length > 0 && (
+      {isCurrentMonth && (bills as UpcomingItem[]).length > 0 && (
         <View style={s.section}>
           <Text style={[s.sectionTitle, { color: colors.text }]}>Upcoming Bills</Text>
           {(bills as UpcomingItem[]).slice(0, 5).map((item, i) => {
@@ -465,7 +465,7 @@ export default function DashboardScreen() {
       )}
 
       {/* Upcoming Income */}
-      {(income_items as UpcomingItem[]).length > 0 && (
+      {isCurrentMonth && (income_items as UpcomingItem[]).length > 0 && (
         <View style={s.section}>
           <Text style={[s.sectionTitle, { color: colors.text }]}>Upcoming Income</Text>
           {(income_items as UpcomingItem[]).slice(0, 3).map((item, i) => (
