@@ -207,6 +207,16 @@ else
   exit 1
 fi
 
+# ─── Stamp build info into app ───────────────────────────────────────────────
+BUILD_INFO_FILE="$WSL_DST/apps/mobile/src/constants/buildInfo.ts"
+BUILD_TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
+cat > "$BUILD_INFO_FILE" << EOF
+// Auto-updated by build.sh before every build — do not edit manually
+export const BUILD_DATE = '$BUILD_TIMESTAMP';
+export const BUILD_VERSION = '$NEW_VERSION';
+EOF
+echo "▶ Stamped build info: v$NEW_VERSION @ $BUILD_TIMESTAMP"
+
 echo "▶ Building APK (this may take a few minutes)..."
 BUILD_START=$(date +%s)
 cd "$WSL_DST/apps/mobile"

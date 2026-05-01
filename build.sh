@@ -150,6 +150,16 @@ rm -rf "$HOME/.gradle/caches/transforms-*"
 find /tmp -maxdepth 1 \( -name "metro-*" -o -name "haste-map-*" \) 2>/dev/null | xargs rm -rf
 echo "  ✔ All caches cleared"
 
+# ─── 4b. Stamp build info into app ───────────────────────────────────────────
+BUILD_INFO_FILE="$WSL_DST/apps/mobile/src/constants/buildInfo.ts"
+BUILD_TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
+cat > "$BUILD_INFO_FILE" << EOF
+// Auto-updated by build.sh before every build — do not edit manually
+export const BUILD_DATE = '$BUILD_TIMESTAMP';
+export const BUILD_VERSION = '$NEW_VERSION';
+EOF
+echo "▶ Stamped build info: v$NEW_VERSION @ $BUILD_TIMESTAMP"
+
 # ─── 5. Build ─────────────────────────────────────────────────────────────────
 echo "▶ Building APK..."
 BUILD_START=$(date +%s)

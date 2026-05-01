@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { getSettings, saveSettings, rolloverFromPreviousMonth, exportAllData, importAllData, AppSettings, getCategories, Category } from '../src/db/queries';
+import { BUILD_DATE, BUILD_VERSION } from '../src/constants/buildInfo';
 import { useTheme } from '../src/theme/useTheme';
 import { useThemeStore } from '../src/store/themeStore';
 import { colors as staticColors, spacing, radius, typography } from '../src/theme';
@@ -281,6 +282,12 @@ export default function SettingsScreen() {
         <TouchableOpacity style={[s.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
           <Text style={s.saveBtnText}>{saving ? 'Saving…' : 'Save Settings'}</Text>
         </TouchableOpacity>
+
+        <View style={s.buildInfo}>
+          <Text style={[s.buildInfoText, { color: colors.textSubtle }]}>
+            v{BUILD_VERSION} · built {BUILD_DATE}
+          </Text>
+        </View>
       </ScrollView>
 
       {/* Category Picker Modal */}
@@ -363,6 +370,8 @@ const s = StyleSheet.create({
   secondaryBtnText:{ ...typography.sm, fontWeight: '600' },
   saveBtn:         { backgroundColor: staticColors.primary, borderRadius: radius.md, padding: spacing.md, alignItems: 'center', marginTop: spacing.lg },
   saveBtnText:     { color: '#fff', fontWeight: '600', ...typography.base },
+  buildInfo:       { alignItems: 'center', paddingVertical: spacing.lg },
+  buildInfoText:   { ...typography.xs },
   themeRow:        { flexDirection: 'row', gap: spacing.sm },
   themeBtn:        { flex: 1, paddingVertical: spacing.sm, borderWidth: 1, borderRadius: radius.md, alignItems: 'center' },
   themeBtnText:    { ...typography.sm, fontWeight: '500' },
