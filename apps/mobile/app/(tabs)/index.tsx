@@ -96,8 +96,10 @@ export default function DashboardScreen() {
   function incomeHidden(): boolean { return privacyEnabled && isLocked; }
 
   // ── data ──────────────────────────────────────────────────────────────────
-  const dashFetcher = useCallback(() => getDashboardData({ month: viewMonth, year: viewYear }), [viewMonth, viewYear]);
-  const { data, loading, refetch }                           = useQuery(dashFetcher);
+  const { data, loading, refetch } = useQuery(
+    () => getDashboardData({ month: viewMonth, year: viewYear }),
+    [viewMonth, viewYear]
+  );
   const { data: projection, refetch: refetchProj }           = useQuery(getEndOfMonthProjection);
   const { data: bills = [], refetch: refetchBills }          = useQuery(getUpcomingBills);
   const { data: income_items = [], refetch: refetchIncome }  = useQuery(getUpcomingIncome);
@@ -155,9 +157,6 @@ export default function DashboardScreen() {
     loadAllDayTotals();
     loadPrivacy();
   }, [refetch, refetchProj, refetchBills, refetchIncome, loadDaySpends, loadAllDayTotals, loadPrivacy]));
-
-  // Refetch when month changes
-  useEffect(() => { refetch(); }, [viewMonth, viewYear]);
 
   async function handleAddSpend() {
     const num = parseFloat(spendAmount);
@@ -290,14 +289,14 @@ export default function DashboardScreen() {
           <View style={s.statDividerH} />
           <View style={s.balanceRow}>
             <StatChip icon="arrow-down-circle" label="Income"
-              value={incomeHidden() ? '€ ••••' : fmt(data?.income?.this_month ?? 0)}
+              value={incomeHidden() ? '€ ••••' : fmt((data?.income?.this_month ?? 0) + Math.max(0, data?.opening_balance ?? 0))}
               color="#34d399" />
             <View style={s.statDivider} />
             <StatChip icon="arrow-up-circle" label="Expenses" value={fmt(data?.expense?.this_month ?? 0)} color="#f87171" />
             <View style={s.statDivider} />
             <StatChip icon="trending-up" label="Net"
-              value={incomeHidden() ? '€ ••••' : `${sign(data?.balance ?? 0)}${fmt(data?.balance ?? 0)}`}
-              color={(data?.balance ?? 0) >= 0 ? '#34d399' : '#f87171'} />
+              value={incomeHidden() ? '€ ••••' : `${sign(data?.available ?? 0)}${fmt(data?.available ?? 0)}`}
+              color={(data?.available ?? 0) >= 0 ? '#34d399' : '#f87171'} />
           </View>
           <Text style={s.tapHint}>tap for details</Text>
         </LinearGradient>
@@ -499,10 +498,23 @@ export default function DashboardScreen() {
             <Text style={s.seeAll}>See all</Text>
           </TouchableOpacity>
         </View>
+        {/* Rollover shown as special income item */}
+        {(data?.opening_balance ?? 0) > 0 && (
+          <View style={[s.rolloverRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[s.rolloverDot, { backgroundColor: '#34d399' }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={[s.rolloverName, { color: colors.text }]}>Leftover from {data!.rollover_from_month}</Text>
+              <Text style={[s.rolloverSub, { color: colors.textMuted }]}>Carried over balance</Text>
+            </View>
+            <Text style={[s.rolloverAmt, { color: '#34d399' }]}>
+              {incomeHidden() ? '€ ••••' : `+${fmt(data!.opening_balance)}`}
+            </Text>
+          </View>
+        )}
         {data?.recent_transactions?.map((tx: any) => (
           <TransactionItem key={tx.id} transaction={tx} hideAmount={incomeHidden() && tx.type === 'income'} />
         ))}
-        {(data?.recent_transactions?.length ?? 0) === 0 && !loading && (
+        {(data?.recent_transactions?.length ?? 0) === 0 && (data?.opening_balance ?? 0) <= 0 && !loading && (
           <Text style={[s.empty, { color: colors.textMuted }]}>No transactions yet</Text>
         )}
       </View>
@@ -753,6 +765,11 @@ const s = StyleSheet.create({
   sectionTitle:      { ...typography.lg, fontWeight: '700' },
   seeAll:            { ...typography.sm, color: staticColors.primary, fontWeight: '600' },
   empty:             { ...typography.sm, textAlign: 'center', marginTop: spacing.md },
+  rolloverRow:       { flexDirection: 'row', alignItems: 'center', padding: spacing.md, borderRadius: radius.md, borderWidth: 1, marginBottom: spacing.xs, gap: spacing.sm },
+  rolloverDot:       { width: 8, height: 8, borderRadius: 4 },
+  rolloverName:      { ...typography.sm, fontWeight: '600' },
+  rolloverSub:       { ...typography.xs, marginTop: 1 },
+  rolloverAmt:       { ...typography.base, fontWeight: '700' },
 
   // FAB
   fab:               { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 58, height: 58, borderRadius: radius.full, backgroundColor: staticColors.primary, justifyContent: 'center', alignItems: 'center', ...shadow.primary },
