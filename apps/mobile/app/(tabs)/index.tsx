@@ -105,6 +105,16 @@ export default function DashboardScreen() {
   const { data: income_items = [], refetch: refetchIncome }  = useQuery(getUpcomingIncome);
   const { data: savingsSummary, refetch: refetchSavings }    = useQuery(getSavingsSummary);
 
+  // ── month transactions (independent of getDashboardData's 5-item limit) ───
+  const { data: monthTxns = [], refetch: refetchMonthTxns } = useQuery(
+    () => {
+      const from = `${viewYear}-${String(viewMonth).padStart(2, '0')}-01`;
+      const to   = `${viewYear}-${String(viewMonth).padStart(2, '0')}-31`;
+      return getTransactions({ from, to, limit: 200 });
+    },
+    [viewMonth, viewYear]
+  );
+
   // ── daily spends ──────────────────────────────────────────────────────────
   const [selectedDate, setSelectedDate]   = useState(todayStr());
   const [daySpends, setDaySpends]         = useState<DailySpend[]>([]);
@@ -152,6 +162,7 @@ export default function DashboardScreen() {
       refetchBills();
       refetchIncome();
       refetchSavings();
+      refetchMonthTxns();
     });
     loadDaySpends(todayStr());
     loadAllDayTotals();
@@ -511,10 +522,10 @@ export default function DashboardScreen() {
             </Text>
           </View>
         )}
-        {data?.recent_transactions?.map((tx: any) => (
+        {(monthTxns as Transaction[]).map((tx: Transaction) => (
           <TransactionItem key={tx.id} transaction={tx} hideAmount={incomeHidden() && tx.type === 'income'} />
         ))}
-        {(data?.recent_transactions?.length ?? 0) === 0 && (data?.opening_balance ?? 0) <= 0 && !loading && (
+        {monthTxns.length === 0 && (data?.opening_balance ?? 0) <= 0 && !loading && (
           <Text style={[s.empty, { color: colors.textMuted }]}>No transactions yet</Text>
         )}
       </View>

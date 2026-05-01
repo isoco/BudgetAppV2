@@ -12,20 +12,16 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: isDark ? colors.surface : colors.surface,
+          backgroundColor: colors.surface,
           borderTopWidth: 0,
           height: 62 + insets.bottom,
           paddingBottom: insets.bottom,
           paddingTop: 8,
-          // floating look
-          marginHorizontal: 0,
           shadowColor: '#000',
           shadowOpacity: isDark ? 0.4 : 0.1,
           shadowRadius: 20,
           shadowOffset: { width: 0, height: -4 },
           elevation: 16,
-          borderTopLeftRadius: 20,
-          borderTopRightRadius: 20,
         },
         tabBarActiveTintColor:   colors.primary,
         tabBarInactiveTintColor: colors.textSubtle,
