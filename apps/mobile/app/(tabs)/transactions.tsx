@@ -40,14 +40,33 @@ export default function TransactionsScreen() {
   const now   = new Date();
   const today = format(now, 'yyyy-MM-dd');
 
+  const [viewMonth, setViewMonth] = useState(now.getMonth() + 1);
+  const [viewYear,  setViewYear]  = useState(now.getFullYear());
+
+  const isCurrentMonth = viewMonth === now.getMonth() + 1 && viewYear === now.getFullYear();
+
+  function prevMonth() {
+    if (viewMonth === 1) { setViewYear(y => y - 1); setViewMonth(12); }
+    else setViewMonth(m => m - 1);
+  }
+  function nextMonth() {
+    if (isCurrentMonth) return;
+    if (viewMonth === 12) { setViewYear(y => y + 1); setViewMonth(1); }
+    else setViewMonth(m => m + 1);
+  }
+
+  const monthLabel = new Date(viewYear, viewMonth - 1, 1)
+    .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
   const load = useCallback(async () => {
     setLoading(true);
-    const from = format(startOfMonth(now), 'yyyy-MM-dd');
-    const to   = format(endOfMonth(now),   'yyyy-MM-dd');
+    const monthDate = new Date(viewYear, viewMonth - 1, 1);
+    const from = format(startOfMonth(monthDate), 'yyyy-MM-dd');
+    const to   = format(endOfMonth(monthDate),   'yyyy-MM-dd');
 
     let data: Transaction[];
     if (filter === 'budget') {
-      const budgets = await getBudgets(now.getMonth() + 1, now.getFullYear());
+      const budgets = await getBudgets(viewMonth, viewYear);
       const budgetCatIds = new Set(budgets.map(b => b.category_id));
       const all = await getTransactions({ from, to, type: 'expense', limit: 500 });
       data = all.filter(tx => tx.category_id && budgetCatIds.has(tx.category_id));
@@ -71,7 +90,7 @@ export default function TransactionsScreen() {
       setTransactions(data);
     }
     setLoading(false);
-  }, [filter]);
+  }, [filter, viewMonth, viewYear]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -160,6 +179,15 @@ export default function TransactionsScreen() {
     <View style={[s.container, { backgroundColor: colors.bg }]}>
       <View style={s.header}>
         <Text style={[s.title, { color: colors.text }]}>Transactions</Text>
+        <View style={s.monthNav}>
+          <TouchableOpacity onPress={prevMonth} style={s.monthBtn}>
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[s.monthLabel, { color: colors.text }]}>{monthLabel}</Text>
+          <TouchableOpacity onPress={nextMonth} style={s.monthBtn} disabled={isCurrentMonth}>
+            <Ionicons name="chevron-forward" size={20} color={isCurrentMonth ? colors.textSubtle : colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Checked summary */}
@@ -326,7 +354,10 @@ function DetailRow({ label, value, colors }: { label: string; value: string; col
 
 const s = StyleSheet.create({
   container:      { flex: 1 },
-  header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56 },
+  header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, paddingTop: 56, flexWrap: 'wrap', gap: 4 },
+  monthNav:       { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  monthBtn:       { padding: 4 },
+  monthLabel:     { ...typography.sm, fontWeight: '600', minWidth: 110, textAlign: 'center' },
   title:          { ...typography['2xl'], fontWeight: '700' },
   fab:            { position: 'absolute', bottom: spacing.xl, right: spacing.md, width: 56, height: 56, borderRadius: radius.full, backgroundColor: staticColors.primary, justifyContent: 'center', alignItems: 'center', shadowColor: staticColors.primary, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
   summary:        { flexDirection: 'row', marginHorizontal: spacing.md, marginBottom: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.sm },

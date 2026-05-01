@@ -98,6 +98,9 @@ check "app/(tabs)/budget.tsx"                  "onDeleteExpense"              "b
 check "src/components/BudgetCard.tsx"          "onDeleteExpense"              "BudgetCard.tsx — delete expense prop"
 check "app/daily-tracker.tsx"                  "getDailySpendTotalsByDay"     "daily-tracker.tsx — daily_spends calendar fix"
 check "src/db/queries.ts"                      "getDailySpendTotalsByDay"     "queries.ts — getDailySpendTotalsByDay added"
+check "src/widget/widgetTaskHandler.ts"        "widgetTaskHandler"            "widgetTaskHandler.ts — widget task handler"
+check "src/widget/DailyLogWidget.tsx"          "DailyLogWidget"               "DailyLogWidget.tsx — widget UI component"
+check "app/_layout.tsx"                        "widgetTaskHandler"            "_layout.tsx — widget registered"
 
 [[ $_fail -eq 1 ]] && exit 1
 
@@ -113,7 +116,7 @@ if ! swapon --show 2>/dev/null | grep -q "$SWAP_FILE"; then
   if [[ ! -f "$SWAP_FILE" ]]; then
     dd if=/dev/zero of="$SWAP_FILE" bs=1M count=4096 status=none
     chmod 600 "$SWAP_FILE"
-    mkswap "$SWAP_FILE" -q
+    mkswap "$SWAP_FILE"
   fi
   if sudo -n swapon "$SWAP_FILE" 2>/dev/null; then
     echo "  ✔ Swap enabled"

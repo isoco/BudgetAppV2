@@ -30,7 +30,6 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
       break;
 
     case 'WIDGET_CLICK':
-      // All taps open the app — handled by clickAction="OPEN_APP" on components
       await renderDailyLog(props.renderWidget);
       break;
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { FlexWidget, TextWidget, ImageWidget } from 'react-native-android-widget';
+import { FlexWidget, TextWidget } from 'react-native-android-widget';
 
 interface Props {
   total: number;
@@ -20,10 +20,9 @@ export function DailyLogWidget({ total, dateLabel }: Props) {
       }}
       clickAction="OPEN_APP"
     >
-      {/* Header */}
       <FlexWidget style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <TextWidget
-          text="📊 Daily Spending"
+          text="Daily Spending"
           style={{ fontSize: 13, color: '#a5b4fc', fontFamily: 'sans-serif-medium' }}
         />
         <FlexWidget
@@ -34,7 +33,7 @@ export function DailyLogWidget({ total, dateLabel }: Props) {
             paddingVertical: 6,
           }}
           clickAction="OPEN_APP"
-          clickActionData={{ screen: 'daily-log' }}
+          clickActionData={{ screen: 'widget-daily-spend' }}
         >
           <TextWidget
             text="+ Add"
@@ -43,20 +42,18 @@ export function DailyLogWidget({ total, dateLabel }: Props) {
         </FlexWidget>
       </FlexWidget>
 
-      {/* Date */}
       <TextWidget
         text={dateLabel}
         style={{ fontSize: 12, color: '#818cf8', fontFamily: 'sans-serif' }}
       />
 
-      {/* Amount */}
       <FlexWidget style={{ flexDirection: 'column' }}>
         <TextWidget
           text="Spent today"
           style={{ fontSize: 11, color: '#6366f1', fontFamily: 'sans-serif' }}
         />
         <TextWidget
-          text={`€${total.toFixed(2)}`}
+          text={`\u20ac${total.toFixed(2)}`}
           style={{ fontSize: 28, color: '#ffffff', fontFamily: 'sans-serif-medium' }}
         />
       </FlexWidget>
