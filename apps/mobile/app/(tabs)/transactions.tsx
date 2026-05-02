@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { router } from 'expo-router';
@@ -15,26 +15,19 @@ import { colors as staticColors, spacing, radius, typography } from '../../src/t
 import { TransactionItem } from '../../src/components/TransactionItem';
 import { useIncomeHidden } from '../../src/store/privacyStore';
 
-type Filter = 'all' | 'income' | 'expense' | 'budget';
-type DailyExpense = { date: string; total: number };
-type ListItem = { type: 'tx'; tx: Transaction } | { type: 'daily'; date: string; total: number };
-
-function groupExpensesByDay(txs: Transaction[]): DailyExpense[] {
-  const map: Record<string, number> = {};
-  for (const tx of txs) {
-    map[tx.date] = (map[tx.date] ?? 0) + tx.amount;
-  }
-  return Object.entries(map)
-    .map(([date, total]) => ({ date, total }))
-    .sort((a, b) => b.date.localeCompare(a.date));
-}
+type Filter    = 'all' | 'income' | 'expense' | 'budget';
+type SortField = 'date' | 'amount';
+type SortDir   = 'desc' | 'asc';
 
 export default function TransactionsScreen() {
   const { colors } = useTheme();
   const hide = useIncomeHidden();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [allTxns, setAllTxns]           = useState<Transaction[]>([]);
+  const [budgetCatIds, setBudgetCatIds] = useState<Set<string>>(new Set());
   const [loading, setLoading]           = useState(true);
   const [filter, setFilter]             = useState<Filter>('all');
+  const [sortField, setSortField]       = useState<SortField>('date');
+  const [sortDir, setSortDir]           = useState<SortDir>('desc');
   const [selectedTx, setSelectedTx]     = useState<Transaction | null>(null);
   const [search, setSearch]             = useState('');
   const now   = new Date();
@@ -58,53 +51,44 @@ export default function TransactionsScreen() {
   const monthLabel = new Date(viewYear, viewMonth - 1, 1)
     .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
+  // Load ALL transactions for the month once — filter/sort applied client-side
   const load = useCallback(async () => {
     setLoading(true);
     const monthDate = new Date(viewYear, viewMonth - 1, 1);
     const from = format(startOfMonth(monthDate), 'yyyy-MM-dd');
     const to   = format(endOfMonth(monthDate),   'yyyy-MM-dd');
 
-    let data: Transaction[];
-    if (filter === 'budget') {
-      const budgets = await getBudgets(viewMonth, viewYear);
-      const budgetCatIds = new Set(budgets.map(b => b.category_id));
-      const all = await getTransactions({ from, to, type: 'expense', limit: 500 });
-      data = all.filter(tx => tx.category_id && budgetCatIds.has(tx.category_id));
-    } else {
-      data = await getTransactions({
-        from, to,
-        type:  filter === 'all' ? undefined : filter,
-        limit: 200,
-      });
-    }
+    let data = await getTransactions({ from, to, limit: 500 });
 
-    // Auto-check past transactions that haven't been checked and weren't manually unchecked
+    // Auto-check past transactions not manually unchecked
     const toCheck = data.filter(tx => tx.date <= today && !tx.paid_date && !tx.manually_unchecked);
     if (toCheck.length > 0) {
       await Promise.all(toCheck.map(tx => markTransactionPaid(tx.id, tx.date)));
-      const refreshed = filter === 'budget'
-        ? data.map(tx => toCheck.find(c => c.id === tx.id) ? { ...tx, paid_date: tx.date } : tx)
-        : await getTransactions({ from, to, type: filter === 'all' ? undefined : filter, limit: 200 });
-      setTransactions(refreshed);
-    } else {
-      setTransactions(data);
+      data = await getTransactions({ from, to, limit: 500 });
     }
+    setAllTxns(data);
     setLoading(false);
+  }, [viewMonth, viewYear]);
+
+  // Load budget category IDs whenever budget filter is active
+  useEffect(() => {
+    if (filter === 'budget') {
+      getBudgets(viewMonth, viewYear).then(b => setBudgetCatIds(new Set(b.map(x => x.category_id))));
+    }
   }, [filter, viewMonth, viewYear]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   async function handleToggle(tx: Transaction) {
     if (tx.paid_date) {
-      // User is unchecking — mark as manually unchecked so auto-check won't re-check it
       await markTransactionUnchecked(tx.id);
       const updated = { ...tx, paid_date: null, manually_unchecked: 1 };
-      setTransactions(prev => prev.map(t => t.id === tx.id ? updated : t));
+      setAllTxns(prev => prev.map(t => t.id === tx.id ? updated : t));
       if (selectedTx?.id === tx.id) setSelectedTx(updated);
     } else {
       await markTransactionPaid(tx.id, today);
       const updated = { ...tx, paid_date: today, manually_unchecked: 0 };
-      setTransactions(prev => prev.map(t => t.id === tx.id ? updated : t));
+      setAllTxns(prev => prev.map(t => t.id === tx.id ? updated : t));
       if (selectedTx?.id === tx.id) setSelectedTx(updated);
     }
   }
@@ -117,7 +101,7 @@ export default function TransactionsScreen() {
         { text: 'This Only', onPress: async () => {
           await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
-          setTransactions(prev => prev.filter(t => t.id !== tx.id));
+          setAllTxns(prev => prev.filter(t => t.id !== tx.id));
           setSelectedTx(null);
         }},
         { text: 'This & Future', onPress: async () => {
@@ -148,32 +132,61 @@ export default function TransactionsScreen() {
         { text: 'Delete', style: 'destructive', onPress: async () => {
           await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
-          setTransactions(prev => prev.filter(t => t.id !== tx.id));
+          setAllTxns(prev => prev.filter(t => t.id !== tx.id));
           setSelectedTx(null);
         }},
       ]);
     }
   }
 
-  // Checked summary (based on full transaction list, not search filter)
-  const checkedTxs     = transactions.filter(tx => tx.paid_date);
+  // Summary — always computed from ALL txns (checked only), never affected by filter/search
+  const checkedTxs     = allTxns.filter(tx => tx.paid_date);
   const checkedIncome  = checkedTxs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0);
   const checkedExpense = checkedTxs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
   const checkedBalance = checkedIncome - checkedExpense;
 
-  // Filter transactions by search query
-  const q = search.trim().toLowerCase();
-  const filtered = q
-    ? transactions.filter(tx =>
+  // Filtered + sorted list — client-side
+  const listData = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    let result = allTxns.filter(tx => {
+      if (filter === 'income')  return tx.type === 'income';
+      if (filter === 'expense') return tx.type === 'expense';
+      if (filter === 'budget')  return budgetCatIds.has(tx.category_id ?? '');
+      return true;
+    });
+
+    if (q) {
+      result = result.filter(tx =>
         (tx.category_name ?? '').toLowerCase().includes(q) ||
         (tx.merchant ?? '').toLowerCase().includes(q) ||
         (tx.note ?? '').toLowerCase().includes(q)
-      )
-    : transactions;
+      );
+    }
 
-  const listData: ListItem[] = filter === 'expense'
-    ? groupExpensesByDay(filtered).map(d => ({ type: 'daily', date: d.date, total: d.total }))
-    : filtered.map(tx => ({ type: 'tx', tx }));
+    result = [...result].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'date') {
+        cmp = a.date.localeCompare(b.date);
+        if (cmp === 0) cmp = (a.created_at ?? '').localeCompare(b.created_at ?? '');
+      } else {
+        cmp = a.amount - b.amount;
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+
+    return result;
+  }, [allTxns, filter, budgetCatIds, search, sortField, sortDir]);
+
+  function toggleSort(field: SortField) {
+    if (sortField === field) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setSortField(field); setSortDir('desc'); }
+  }
+
+  const sortIcon = (field: SortField) =>
+    sortField === field
+      ? (sortDir === 'desc' ? 'chevron-down' : 'chevron-up')
+      : 'swap-vertical';
 
   return (
     <View style={[s.container, { backgroundColor: colors.bg }]}>
@@ -190,7 +203,7 @@ export default function TransactionsScreen() {
         </View>
       </View>
 
-      {/* Checked summary */}
+      {/* Summary — only changes when transactions are checked/unchecked */}
       <View style={[s.summary, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <View style={s.summaryCol}>
           <Text style={[s.summaryLabel, { color: colors.textMuted }]}>Income</Text>
@@ -230,6 +243,7 @@ export default function TransactionsScreen() {
         )}
       </View>
 
+      {/* Filter chips */}
       <View style={s.filters}>
         {(['all', 'income', 'expense', 'budget'] as Filter[]).map(f => (
           <TouchableOpacity
@@ -244,43 +258,45 @@ export default function TransactionsScreen() {
         ))}
       </View>
 
+      {/* Sort controls */}
+      <View style={s.sortRow}>
+        <Text style={[s.sortLabel, { color: colors.textMuted }]}>Sort:</Text>
+        <TouchableOpacity
+          style={[s.sortBtn, { borderColor: colors.border }, sortField === 'date' && s.sortBtnActive]}
+          onPress={() => toggleSort('date')}
+        >
+          <Text style={[s.sortBtnText, { color: sortField === 'date' ? '#fff' : colors.textMuted }]}>Date</Text>
+          <Ionicons name={sortIcon('date')} size={12} color={sortField === 'date' ? '#fff' : colors.textMuted} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.sortBtn, { borderColor: colors.border }, sortField === 'amount' && s.sortBtnActive]}
+          onPress={() => toggleSort('amount')}
+        >
+          <Text style={[s.sortBtnText, { color: sortField === 'amount' ? '#fff' : colors.textMuted }]}>Amount</Text>
+          <Ionicons name={sortIcon('amount')} size={12} color={sortField === 'amount' ? '#fff' : colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+
       <FlatList
         data={listData}
-        keyExtractor={(item, i) => item.type === 'daily' ? `daily-${item.date}` : item.tx.id}
+        keyExtractor={item => item.id}
         refreshing={loading}
         onRefresh={load}
-        renderItem={({ item }) => {
-          if (item.type === 'daily') {
-            return (
-              <View style={[s.dailyRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <View>
-                  <Text style={[s.dailyLabel, { color: colors.text }]}>Life Expenses</Text>
-                  <Text style={[s.dailyDate, { color: colors.textMuted }]}>
-                    {format(new Date(item.date), 'MMM d, yyyy')}
-                  </Text>
-                </View>
-                <Text style={[s.dailyAmount, { color: staticColors.dark.text }]}>
-                  -€{item.total.toFixed(2)}
-                </Text>
-              </View>
-            );
-          }
-          return (
-            <TransactionItem
-              transaction={item.tx}
-              onPress={() => setSelectedTx(item.tx)}
-              onDelete={() => handleDelete(item.tx)}
-              checked={!!item.tx.paid_date}
-              onToggle={() => handleToggle(item.tx)}
-              hideAmount={hide && item.tx.type === 'income'}
-            />
-          );
-        }}
+        renderItem={({ item }) => (
+          <TransactionItem
+            transaction={item}
+            onPress={() => setSelectedTx(item)}
+            onDelete={() => handleDelete(item)}
+            checked={!!item.paid_date}
+            onToggle={() => handleToggle(item)}
+            hideAmount={hide && item.type === 'income'}
+          />
+        )}
         contentContainerStyle={s.list}
         ListEmptyComponent={
           !loading
             ? <Text style={[s.empty, { color: colors.textMuted }]}>
-                {q ? 'No matches found' : 'No transactions this month'}
+                {search.trim() ? 'No matches found' : 'No transactions this month'}
               </Text>
             : null
         }
@@ -367,17 +383,18 @@ const s = StyleSheet.create({
   summaryValue:   { ...typography.sm, fontWeight: '700' },
   searchRow:      { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginHorizontal: spacing.md, marginBottom: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.md, borderWidth: 1 },
   searchInput:    { flex: 1, ...typography.sm, padding: 0 },
-  filters:        { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
+  filters:        { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, marginBottom: spacing.xs },
   chip:           { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, borderWidth: 1 },
   chipActive:     { backgroundColor: staticColors.primary, borderColor: staticColors.primary },
   chipText:       { ...typography.sm },
   chipTextActive: { color: '#fff', fontWeight: '600' },
+  sortRow:        { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
+  sortLabel:      { ...typography.xs, marginRight: 2 },
+  sortBtn:        { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full, borderWidth: 1 },
+  sortBtnActive:  { backgroundColor: staticColors.primary, borderColor: staticColors.primary },
+  sortBtnText:    { ...typography.xs, fontWeight: '600' },
   list:           { padding: spacing.md, paddingBottom: 80 },
   empty:          { ...typography.base, textAlign: 'center', marginTop: spacing.xl },
-  dailyRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderRadius: radius.md, borderWidth: 1, marginBottom: spacing.sm },
-  dailyLabel:     { ...typography.base, fontWeight: '600' },
-  dailyDate:      { ...typography.xs, marginTop: 2 },
-  dailyAmount:    { ...typography.base, fontWeight: '700' },
   modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalSheet:     { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: 40 },
   modalHandle:    { width: 40, height: 4, borderRadius: 2, backgroundColor: '#555', alignSelf: 'center', marginBottom: spacing.md },

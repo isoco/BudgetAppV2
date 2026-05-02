@@ -548,7 +548,7 @@ export async function getEndOfMonthProjection(): Promise<{
   const opening          = mb[0]?.opening_balance ?? 0;
   const savingsTarget    = mb[0]?.savings_contribution ?? cfg.monthly_savings ?? 0;
   const projected_income = actuals[0]?.income ?? 0;
-  const projected_expense = Math.max(actuals[0]?.expense ?? 0, budgets[0]?.total ?? 0);
+  const projected_expense = Math.max(actuals[0]?.expense ?? 0, budgets[0]?.total ?? 0) + savingsTarget;
   const projected_balance = opening + projected_income - projected_expense;
 
   return { projected_income, projected_expense, projected_balance, savings_target: savingsTarget, days_left };
