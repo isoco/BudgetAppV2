@@ -100,7 +100,8 @@ check() {
 
 check "src/store/privacyStore.ts"              "useIncomeHidden"              "privacyStore — global privacy store"
 check "app/(tabs)/index.tsx"                   "privacyInitialized"           "index.tsx — privacy persistence fix"
-check "app/(tabs)/transactions.tsx"            "budget"                       "transactions.tsx — budget filter"
+check "app/(tabs)/transactions.tsx"            "sortField"                    "transactions.tsx — sort by date/amount"
+check "src/db/queries.ts"                      "savingsTarget"                "queries.ts — savings in projected expense"
 check "app/(tabs)/savings.tsx"                 "pastTotal"                    "savings.tsx — past-only total"
 check "app/(tabs)/budget.tsx"                  "viewMonth"                    "budget.tsx — month navigation"
 check "src/components/BudgetCard.tsx"          "onDeleteExpense"              "BudgetCard.tsx — delete expense prop"
@@ -204,6 +205,18 @@ if grep -q "getDailySpendTotalsByDay" "$WSL_DST/apps/mobile/app/daily-tracker.ts
   echo "  ✔ daily-tracker.tsx has daily_spends calendar fix"
 else
   echo "  ✗ daily-tracker.tsx is STALE. Aborting."
+  exit 1
+fi
+if grep -q "sortField" "$WSL_DST/apps/mobile/app/(tabs)/transactions.tsx"; then
+  echo "  ✔ transactions.tsx has sort + individual expense rows"
+else
+  echo "  ✗ transactions.tsx is STALE. Aborting."
+  exit 1
+fi
+if grep -q "savingsTarget" "$WSL_DST/apps/mobile/src/db/queries.ts"; then
+  echo "  ✔ queries.ts has savings in projected expense"
+else
+  echo "  ✗ queries.ts is STALE. Aborting."
   exit 1
 fi
 
