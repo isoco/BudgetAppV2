@@ -62,10 +62,12 @@ else
   MINOR=0
 fi
 NEW_VERSION="$MAJOR.$MINOR"
+# versionCode: unique integer Android uses to compare versions (use total minor count)
+VERSION_CODE=$MINOR
 
 echo ""
 echo "╔══════════════════════════════════════╗"
-echo "║  BudgetApp Build  v$NEW_VERSION"
+echo "║  BudgetApp Build  v$NEW_VERSION  (code $VERSION_CODE)"
 echo "╚══════════════════════════════════════╝"
 echo ""
 
@@ -92,24 +94,34 @@ check() {
 
 check "src/store/privacyStore.ts"              "useIncomeHidden"              "privacyStore — global privacy store"
 check "app/(tabs)/index.tsx"                   "privacyInitialized"           "index.tsx — privacy persistence fix"
-check "app/(tabs)/transactions.tsx"            "budget"                       "transactions.tsx — budget filter"
+check "app/(tabs)/transactions.tsx"            "sortField"                    "transactions.tsx — sort by date/amount"
+check "app/settings.tsx"                       "EXPO_PUBLIC_BUILD_VERSION"    "settings.tsx — version from env var"
 check "app/(tabs)/savings.tsx"                 "pastTotal"                    "savings.tsx — past-only total"
 check "app/(tabs)/budget.tsx"                  "viewMonth"                    "budget.tsx — month navigation"
 check "src/components/BudgetCard.tsx"          "onDeleteExpense"              "BudgetCard.tsx — delete expense prop"
 check "app/daily-tracker.tsx"                  "getDailySpendTotalsByDay"     "daily-tracker.tsx — daily_spends calendar fix"
-check "src/db/queries.ts"                      "getDailySpendTotalsByDay"     "queries.ts — getDailySpendTotalsByDay added"
+check "src/db/queries.ts"                      "savingsTarget"                "queries.ts — savings in projected expense"
 check "src/widget/widgetTaskHandler.ts"        "widgetTaskHandler"            "widgetTaskHandler.ts — widget task handler"
 check "src/widget/DailyLogWidget.tsx"          "DailyLogWidget"               "DailyLogWidget.tsx — widget UI component"
 check "app/_layout.tsx"                        "widgetTaskHandler"            "_layout.tsx — widget registered"
+check "credentials.json"                       "keystorePath"                 "credentials.json — consistent signing key"
 
 [[ $_fail -eq 1 ]] && exit 1
 
-# ─── 2. Install deps ──────────────────────────────────────────────────────────
+# ─── 2. Patch versionCode + versionName in build.gradle ──────────────────────
+GRADLE_FILE="$WSL_DST/apps/mobile/android/app/build.gradle"
+sed -i "s/VERSION_CODE\.toInteger()/$VERSION_CODE/" "$GRADLE_FILE" 2>/dev/null || true
+sed -i "s/VERSION_CODE/$VERSION_CODE/g" "$GRADLE_FILE"
+sed -i "s/VERSION_NAME/\"$NEW_VERSION\"/" "$GRADLE_FILE" 2>/dev/null || true
+sed -i "s/VERSION_NAME/$NEW_VERSION/g" "$GRADLE_FILE"
+echo "▶ Set versionCode=$VERSION_CODE versionName=$NEW_VERSION in build.gradle"
+
+# ─── 3. Install deps ──────────────────────────────────────────────────────────
 echo "▶ Installing dependencies..."
 cd "$WSL_DST"
 pnpm install --no-frozen-lockfile --silent
 
-# ─── 2b. Ensure swap for C++ compilation ─────────────────────────────────────
+# ─── 3b. Ensure swap for C++ compilation ─────────────────────────────────────
 SWAP_FILE="$HOME/build-swap"
 if ! swapon --show 2>/dev/null | grep -q "$SWAP_FILE"; then
   echo "▶ Creating 4 GB swap file..."
@@ -127,7 +139,7 @@ else
   echo "  ✔ Swap already active"
 fi
 
-# ─── 2c. Patch gradlew ───────────────────────────────────────────────────────
+# ─── 3c. Patch gradlew ───────────────────────────────────────────────────────
 GRADLEW="$WSL_DST/apps/mobile/android/gradlew"
 sed -i '/^export JAVA_HOME=.*jdk/d' "$GRADLEW"
 sed -i '/^echo "sdk.dir=/d' "$GRADLEW"
@@ -135,39 +147,56 @@ sed -i '/^export CMAKE_BUILD_PARALLEL_LEVEL=/d' "$GRADLEW"
 sed -i "1a export JAVA_HOME=\"$JAVA_HOME\"\nexport CMAKE_BUILD_PARALLEL_LEVEL=1\necho \"sdk.dir=$ANDROID_HOME\" > \"\$(dirname \"\$0\")/local.properties\"" "$GRADLEW"
 echo "▶ Patched gradlew (JAVA_HOME + CMAKE_BUILD_PARALLEL_LEVEL=1 + sdk.dir)"
 
-# ─── 3. Kill stale Gradle daemons ────────────────────────────────────────────
+# ─── 4. Kill stale Gradle daemons ────────────────────────────────────────────
 echo "▶ Stopping Gradle daemons..."
 "$GRADLEW" -p "$WSL_DST/apps/mobile/android" --stop 2>/dev/null || true
 pkill -f "GradleDaemon" 2>/dev/null || true
 
-# ─── 4. Clear ALL caches ─────────────────────────────────────────────────────
+# ─── 5. Clear ALL caches ─────────────────────────────────────────────────────
 echo "▶ Clearing all caches..."
+# Metro / Expo JS bundler caches
 rm -rf "$HOME/.expo/metro-cache" "$HOME/.expo/cache"
 rm -rf "$WSL_DST/apps/mobile/.expo" "$WSL_DST/apps/mobile/.metro"
 rm -rf "$WSL_DST/node_modules/.cache"
+# Gradle build-cache and transform cache
 rm -rf "$HOME/.gradle/caches/build-cache-*"
 rm -rf "$HOME/.gradle/caches/transforms-*"
-find /tmp -maxdepth 1 \( -name "metro-*" -o -name "haste-map-*" \) 2>/dev/null | xargs rm -rf
+# Gradle build OUTPUT — critical: forces fresh JS bundle, not cached from v1.33
+rm -rf "$WSL_DST/apps/mobile/android/app/build"
+rm -rf "$WSL_DST/apps/mobile/android/.gradle"
+# EAS local build temp dirs
+find /tmp -maxdepth 1 \( -name "metro-*" -o -name "haste-map-*" -o -name "eas-build-*" \) 2>/dev/null | xargs rm -rf
+find /tmp -maxdepth 2 -name "eas-build-*" 2>/dev/null | xargs rm -rf
+rm -rf "$HOME/.eas-build" 2>/dev/null || true
 echo "  ✔ All caches cleared"
 
-# ─── 4b. Stamp build info into app ───────────────────────────────────────────
-BUILD_INFO_FILE="$WSL_DST/apps/mobile/src/constants/buildInfo.ts"
+# ─── 6. Stamp build version into eas.json env ────────────────────────────────
+# Using EXPO_PUBLIC_* vars — these are inlined by Metro at bundle time,
+# bypassing all file/transform caches. Far more reliable than buildInfo.ts.
 BUILD_TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
-cat > "$BUILD_INFO_FILE" << EOF
-// Auto-updated by build.sh before every build — do not edit manually
-export const BUILD_DATE = '$BUILD_TIMESTAMP';
-export const BUILD_VERSION = '$NEW_VERSION';
-EOF
-echo "▶ Stamped build info: v$NEW_VERSION @ $BUILD_TIMESTAMP"
+EAS_JSON="$WSL_DST/apps/mobile/eas.json"
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('$EAS_JSON', 'utf8'));
+  cfg.build.preview.env = {
+    ...cfg.build.preview.env,
+    EXPO_PUBLIC_BUILD_VERSION: '$NEW_VERSION',
+    EXPO_PUBLIC_BUILD_DATE:    '$BUILD_TIMESTAMP',
+  };
+  fs.writeFileSync('$EAS_JSON', JSON.stringify(cfg, null, 2));
+"
+echo "▶ Stamped eas.json: EXPO_PUBLIC_BUILD_VERSION=$NEW_VERSION @ $BUILD_TIMESTAMP"
+echo "  Verifying..."
+node -e "const c=JSON.parse(require('fs').readFileSync('$EAS_JSON','utf8')); console.log('  BUILD_VERSION =', c.build.preview.env.EXPO_PUBLIC_BUILD_VERSION);"
 
-# ─── 5. Build ─────────────────────────────────────────────────────────────────
+# ─── 7. Build ─────────────────────────────────────────────────────────────────
 echo "▶ Building APK..."
 BUILD_START=$(date +%s)
 cd "$WSL_DST/apps/mobile"
 EXPO_NO_METRO_CACHE=1 METRO_RESET_CACHE=true eas build -p android --profile preview --local --clear-cache
 BUILD_END=$(date +%s)
 
-# ─── 6. Locate APK ────────────────────────────────────────────────────────────
+# ─── 8. Locate APK ────────────────────────────────────────────────────────────
 APK=$(find "$WSL_DST/apps/mobile" -maxdepth 2 -name "*.apk" | tail -1)
 
 if [[ -z "$APK" ]]; then
@@ -175,18 +204,19 @@ if [[ -z "$APK" ]]; then
   exit 1
 fi
 
-# ─── 7. Copy to OneDrive ──────────────────────────────────────────────────────
+# ─── 9. Copy to OneDrive ──────────────────────────────────────────────────────
 DEST="$OUTPUT_DIR/BudgetApp_V$NEW_VERSION.apk"
 echo "▶ Copying to: $DEST"
 cp "$APK" "$DEST"
 
-# ─── 8. Save version ──────────────────────────────────────────────────────────
+# ─── 10. Save version ─────────────────────────────────────────────────────────
 echo "$NEW_VERSION" > "$VERSION_FILE"
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 ELAPSED=$(( $(date +%s) - BUILD_START ))
 echo ""
 echo "✔ Done in ${ELAPSED}s"
-echo "  APK: BudgetApp_V$NEW_VERSION.apk"
-echo "  Dir: $OUTPUT_DIR"
+echo "  APK:         BudgetApp_V$NEW_VERSION.apk"
+echo "  versionCode: $VERSION_CODE"
+echo "  Dir:         $OUTPUT_DIR"
 echo ""

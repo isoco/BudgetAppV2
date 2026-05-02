@@ -110,6 +110,7 @@ check "src/db/queries.ts"                      "getDailySpendTotalsByDay"     "q
 check "src/widget/widgetTaskHandler.ts"        "widgetTaskHandler"            "widgetTaskHandler.ts — widget task handler"
 check "src/widget/DailyLogWidget.tsx"          "DailyLogWidget"               "DailyLogWidget.tsx — widget UI component"
 check "app/_layout.tsx"                        "widgetTaskHandler"            "_layout.tsx — widget registered"
+check "credentials.json"                       "keystorePath"                 "credentials.json — consistent signing key"
 
 [[ $_fail -eq 1 ]] && exit 1
 
@@ -191,6 +192,9 @@ rm -rf "$HOME/.gradle/caches/build-cache-*"
 rm -rf "$HOME/.gradle/caches/transforms-*"
 # EAS local tmp files from previous runs
 find /tmp/ivan -maxdepth 2 -name "*.tar.gz" 2>/dev/null | xargs rm -f
+# EAS local build working dirs (contain cached JS bundles from previous builds)
+find /tmp -maxdepth 2 -name "eas-build-*" 2>/dev/null | xargs rm -rf
+rm -rf "$HOME/.eas-build" 2>/dev/null || true
 echo "  ✔ All caches cleared"
 
 # ─── 5. Confirm synced files have latest changes ──────────────────────────────
@@ -229,6 +233,8 @@ export const BUILD_DATE = '$BUILD_TIMESTAMP';
 export const BUILD_VERSION = '$NEW_VERSION';
 EOF
 echo "▶ Stamped build info: v$NEW_VERSION @ $BUILD_TIMESTAMP"
+echo "  Verifying stamp..."
+grep "BUILD_VERSION" "$BUILD_INFO_FILE"
 
 echo "▶ Building APK (this may take a few minutes)..."
 BUILD_START=$(date +%s)
