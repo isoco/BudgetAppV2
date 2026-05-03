@@ -1,5 +1,8 @@
 ﻿import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Share, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Modal } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -23,8 +26,7 @@ export default function SettingsScreen() {
   const [dailyLimit, setDailyLimit] = useState('');
   const [savings, setSavings]       = useState('');
   const [saving, setSaving]         = useState(false);
-  const [importVisible, setImportVisible] = useState(false);
-  const [importJson, setImportJson]       = useState('');
+  const [importing, setImporting] = useState(false);
 
   // Privacy
   const [incomeCategories, setIncomeCategories] = useState<Category[]>([]);
@@ -76,7 +78,10 @@ export default function SettingsScreen() {
   async function handleExport() {
     try {
       const json = await exportAllData();
-      await Share.share({ message: json, title: 'Budget Export' });
+      const date = new Date().toISOString().slice(0, 10);
+      const path = `${FileSystem.cacheDirectory}budget-export-${date}.json`;
+      await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(path, { mimeType: 'application/json', dialogTitle: 'Save Budget Export' });
     } catch (e: any) {
       Alert.alert('Export Failed', e.message);
     }
@@ -84,12 +89,16 @@ export default function SettingsScreen() {
 
   async function handleImport() {
     try {
-      await importAllData(importJson);
-      setImportVisible(false);
-      setImportJson('');
+      const result = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
+      if (result.canceled) return;
+      setImporting(true);
+      const json = await FileSystem.readAsStringAsync(result.assets[0].uri, { encoding: FileSystem.EncodingType.UTF8 });
+      await importAllData(json);
       Alert.alert('Success', 'Data imported successfully.');
     } catch (e: any) {
       Alert.alert('Import Failed', e.message);
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -274,9 +283,9 @@ export default function SettingsScreen() {
             <Text style={[s.secondaryBtnText, { color: staticColors.primary }]}>Export Data</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.warning }]} onPress={() => setImportVisible(true)}>
+          <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.warning }]} onPress={handleImport} disabled={importing}>
             <Ionicons name="download-outline" size={16} color={staticColors.warning} />
-            <Text style={[s.secondaryBtnText, { color: staticColors.warning }]}>Import Data</Text>
+            <Text style={[s.secondaryBtnText, { color: staticColors.warning }]}>{importing ? 'Importing…' : 'Import Data'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -325,31 +334,6 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Import Modal */}
-      <Modal visible={importVisible} animationType="slide" transparent>
-        <View style={s.modalOverlay}>
-          <View style={[s.modalBox, { backgroundColor: colors.surface }]}>
-            <Text style={[s.modalTitle, { color: colors.text }]}>Paste JSON to Import</Text>
-            <TextInput
-              style={[s.modalInput, { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }]}
-              multiline
-              numberOfLines={8}
-              placeholder="Paste exported JSON here…"
-              placeholderTextColor={colors.textSubtle}
-              value={importJson}
-              onChangeText={setImportJson}
-            />
-            <View style={s.modalActions}>
-              <TouchableOpacity style={[s.modalBtn, { borderColor: colors.border }]} onPress={() => { setImportVisible(false); setImportJson(''); }}>
-                <Text style={[s.modalBtnText, { color: colors.textMuted }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.primary, backgroundColor: staticColors.primary }]} onPress={handleImport}>
-                <Text style={[s.modalBtnText, { color: '#fff' }]}>Import</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -387,7 +371,6 @@ const s = StyleSheet.create({
   modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalBox:        { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: 40 },
   modalTitle:      { ...typography.lg, fontWeight: '700', marginBottom: spacing.md },
-  modalInput:      { borderWidth: 1, borderRadius: radius.md, padding: spacing.md, ...typography.sm, height: 160, textAlignVertical: 'top', marginBottom: spacing.md },
   modalActions:    { flexDirection: 'row', gap: spacing.sm },
   modalBtn:        { flex: 1, borderWidth: 1, borderRadius: radius.md, padding: spacing.md, alignItems: 'center' },
   modalBtnText:    { ...typography.base, fontWeight: '600' },

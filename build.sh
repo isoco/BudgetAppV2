@@ -108,13 +108,35 @@ check "credentials.json"                       "keystorePath"                 "c
 
 [[ $_fail -eq 1 ]] && exit 1
 
-# ─── 2. Patch versionCode + versionName in build.gradle ──────────────────────
+# ─── 1c. Delete old APKs from WSL so find always returns the fresh one ────────
+# rsync --exclude='*.apk' + --delete does NOT remove excluded files.
+# Old APKs from previous builds accumulate, and "find | tail -1" may pick one.
+OLD_APKS=$(find "$WSL_DST/apps/mobile" -maxdepth 4 -name "*.apk" 2>/dev/null)
+if [[ -n "$OLD_APKS" ]]; then
+  echo "$OLD_APKS" | xargs rm -f
+  echo "▶ Removed old APKs from WSL build dir"
+fi
+
+# ─── 2. Patch versionCode + versionName in build.gradle AND app.json ─────────
 GRADLE_FILE="$WSL_DST/apps/mobile/android/app/build.gradle"
 sed -i "s/VERSION_CODE\.toInteger()/$VERSION_CODE/" "$GRADLE_FILE" 2>/dev/null || true
 sed -i "s/VERSION_CODE/$VERSION_CODE/g" "$GRADLE_FILE"
 sed -i "s/VERSION_NAME/\"$NEW_VERSION\"/" "$GRADLE_FILE" 2>/dev/null || true
 sed -i "s/VERSION_NAME/$NEW_VERSION/g" "$GRADLE_FILE"
 echo "▶ Set versionCode=$VERSION_CODE versionName=$NEW_VERSION in build.gradle"
+
+# Also stamp app.json — EAS reads this for appVersionSource:local and can
+# override build.gradle values if app.json version is stale.
+APP_JSON="$WSL_DST/apps/mobile/app.json"
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('$APP_JSON', 'utf8'));
+  cfg.expo.version = '$NEW_VERSION';
+  cfg.expo.android = cfg.expo.android || {};
+  cfg.expo.android.versionCode = $VERSION_CODE;
+  fs.writeFileSync('$APP_JSON', JSON.stringify(cfg, null, 2));
+"
+echo "▶ Set version=$NEW_VERSION versionCode=$VERSION_CODE in app.json"
 
 # ─── 3. Install deps ──────────────────────────────────────────────────────────
 echo "▶ Installing dependencies..."
@@ -227,7 +249,9 @@ EXPO_NO_METRO_CACHE=1 METRO_RESET_CACHE=true eas build -p android --profile prev
 BUILD_END=$(date +%s)
 
 # ─── 8. Locate APK ────────────────────────────────────────────────────────────
-APK=$(find "$WSL_DST/apps/mobile" -maxdepth 2 -name "*.apk" | tail -1)
+# Sort by mtime descending — always pick the newest, not filesystem-order last.
+APK=$(find "$WSL_DST/apps/mobile" -maxdepth 4 -name "*.apk" -printf '%T@ %p\n' 2>/dev/null \
+  | sort -rn | head -1 | cut -d' ' -f2-)
 
 if [[ -z "$APK" ]]; then
   echo "✗ No APK found after build!"
