@@ -125,12 +125,8 @@ sed -i "s/VERSION_NAME/\"$NEW_VERSION\"/" "$GRADLE_FILE" 2>/dev/null || true
 sed -i "s/VERSION_NAME/$NEW_VERSION/g" "$GRADLE_FILE"
 echo "▶ Set versionCode=$VERSION_CODE versionName=$NEW_VERSION in build.gradle"
 
-# ─── 3. Install deps ──────────────────────────────────────────────────────────
-echo "▶ Installing dependencies..."
-cd "$WSL_DST"
-pnpm install --no-frozen-lockfile --silent
-
-# ─── 3b. Patch gradlew — inject JAVA_HOME + sdk.dir at runtime inside EAS temp dir
+# ─── 3. Patch gradlew — inject JAVA_HOME + sdk.dir at runtime inside EAS temp dir
+# (deps installed AFTER cache wipe below)
 GRADLEW="$WSL_DST/apps/mobile/android/gradlew"
 # Remove previous patch lines
 sed -i '/^export JAVA_HOME=.*jdk/d' "$GRADLEW"
@@ -181,35 +177,55 @@ fi
 echo "▶ Stopping Gradle daemons..."
 "$WSL_DST/apps/mobile/android/gradlew" -p "$WSL_DST/apps/mobile/android" --stop 2>/dev/null || true
 pkill -f "GradleDaemon" 2>/dev/null || true
+pkill -f "gradle" 2>/dev/null || true
 
-# ─── 5. Clear ALL caches ─────────────────────────────────────────────────────
-echo "▶ Clearing all caches..."
+# ─── 5. Nuclear cache wipe — zero memory of previous builds ──────────────────
+echo "▶ Wiping ALL caches and build artifacts (zero-cache build)..."
 
-_removed=0
-_rm_verbose() {
+_nuke() {
   local label="$1"; shift
   local found=0
   for p in "$@"; do
     for match in $p; do
       [[ -e "$match" ]] || continue
       rm -rf "$match"
-      found=1; _removed=1
+      found=1
     done
   done
-  [[ $found -eq 1 ]] && echo "  ✔ cleared: $label" || echo "  ○ already clean: $label"
+  [[ $found -eq 1 ]] && echo "  ✔ nuked: $label" || echo "  ○ already gone: $label"
 }
 
-_rm_verbose "Metro/Expo JS cache"       "$HOME/.expo/metro-cache" "$HOME/.expo/cache"
-_rm_verbose "mobile .expo/.metro"       "$WSL_DST/apps/mobile/.expo" "$WSL_DST/apps/mobile/.metro"
-_rm_verbose "node_modules/.cache"       "$WSL_DST/node_modules/.cache"
-_rm_verbose "Gradle build-cache"        "$HOME/.gradle/caches"/build-cache-*
-_rm_verbose "Gradle transforms"         "$HOME/.gradle/caches"/transforms-*
-_rm_verbose "android/app/build output" "$WSL_DST/apps/mobile/android/app/build"
-_rm_verbose "android/.gradle"          "$WSL_DST/apps/mobile/android/.gradle"
-_rm_verbose "/tmp eas-build dirs"      "$(find /tmp -maxdepth 2 \( -name 'metro-*' -o -name 'haste-map-*' -o -name 'eas-build-*' \) 2>/dev/null | tr '\n' ' ')"
-_rm_verbose "~/.eas-build"             "$HOME/.eas-build"
+# Metro / Expo JS caches
+_nuke "Metro/Expo JS cache"        "$HOME/.expo/metro-cache" "$HOME/.expo/cache"
+_nuke "mobile .expo/.metro"        "$WSL_DST/apps/mobile/.expo" "$WSL_DST/apps/mobile/.metro"
 
-[[ $_removed -eq 1 ]] && echo "  ✔ All caches cleared" || echo "  ⚠ No caches found — already clean (stale bundle risk!)"
+# /tmp ephemeral build dirs
+while IFS= read -r p; do rm -rf "$p"; done < <(find /tmp -maxdepth 2 \( -name 'metro-*' -o -name 'haste-map-*' -o -name 'eas-build-*' -o -name 'react-native-*' \) 2>/dev/null)
+echo "  ✔ nuked: /tmp metro/haste/eas/RN dirs"
+
+# EAS local build cache
+_nuke "~/.eas-build"               "$HOME/.eas-build"
+
+# All Gradle caches and daemon state — full wipe
+_nuke "Gradle caches (full)"       "$HOME/.gradle/caches"
+_nuke "Gradle daemon logs"         "$HOME/.gradle/daemon"
+_nuke "Gradle native"              "$HOME/.gradle/native"
+
+# Android project build outputs and incremental state
+_nuke "android/app/build"          "$WSL_DST/apps/mobile/android/app/build"
+_nuke "android/build"              "$WSL_DST/apps/mobile/android/build"
+_nuke "android/.gradle"            "$WSL_DST/apps/mobile/android/.gradle"
+
+# node_modules — full reinstall guarantees no stale JS transforms
+_nuke "root node_modules"          "$WSL_DST/node_modules"
+_nuke "mobile node_modules"        "$WSL_DST/apps/mobile/node_modules"
+
+echo "  ✔ Zero-cache wipe complete"
+
+# ─── 5b. Fresh dep install (after wipe) ──────────────────────────────────────
+echo "▶ Installing dependencies (fresh)..."
+cd "$WSL_DST"
+pnpm install --no-frozen-lockfile
 
 # ─── 6. Stamp build version ──────────────────────────────────────────────────
 BUILD_TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
@@ -233,14 +249,20 @@ node -e "
 "
 echo "  eas.json preview.env updated ✔"
 
-# ─── 7. Build ─────────────────────────────────────────────────────────────────
+# ─── 7. Gradle clean ──────────────────────────────────────────────────────────
+echo "▶ Running gradlew clean..."
+cd "$WSL_DST/apps/mobile/android"
+./gradlew clean --no-daemon 2>&1 | tail -5
+echo "  ✔ Gradle clean done"
+
+# ─── 8. Build ─────────────────────────────────────────────────────────────────
 echo "▶ Building APK (this may take a few minutes)..."
 BUILD_START=$(date +%s)
 cd "$WSL_DST/apps/mobile"
 EXPO_NO_METRO_CACHE=1 METRO_RESET_CACHE=true eas build -p android --profile preview --local --clear-cache
 BUILD_END=$(date +%s)
 
-# ─── 8. Locate APK ────────────────────────────────────────────────────────────
+# ─── 9. Locate APK ────────────────────────────────────────────────────────────
 APK=$(find "$WSL_DST/apps/mobile" -maxdepth 2 -name "*.apk" | tail -1)
 
 if [[ -z "$APK" ]]; then

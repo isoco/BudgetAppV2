@@ -15,6 +15,7 @@ export function useQuery<T>(fn: () => Promise<T>, deps: unknown[] = []) {
       setError(null);
     } catch (e) {
       setError(e as Error);
+      console.error('[useQuery] failed:', (e as Error)?.message, e);
     } finally {
       setLoading(false);
     }
