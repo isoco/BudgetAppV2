@@ -52,7 +52,7 @@ echo "▶ Using JAVA_HOME=$JAVA_HOME"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$JAVA_HOME/bin:$PATH"
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
-WIN_SRC="/mnt/c/Users/Ivan/Projekti/BudgetAppV2"
+WIN_SRC="/mnt/d/Projekti/BudgetAppV2"
 WSL_DST="$HOME/BudgetAppV2"
 OUTPUT_DIR="/mnt/c/Users/Ivan/OneDrive/Aplikacija test"
 VERSION_FILE="$OUTPUT_DIR/.version"
@@ -70,15 +70,16 @@ else
   MINOR=0
 fi
 NEW_VERSION="$MAJOR.$MINOR"
+VERSION_CODE=$MINOR
 
 echo ""
 echo "╔══════════════════════════════════════╗"
-echo "║  BudgetApp Build  v$NEW_VERSION"
+echo "║  BudgetApp Build  v$NEW_VERSION  (code $VERSION_CODE)"
 echo "╚══════════════════════════════════════╝"
 echo ""
 
 # ─── 1. Sync ──────────────────────────────────────────────────────────────────
-echo "▶ Syncing files to WSL2..."
+echo "▶ Syncing files from $WIN_SRC..."
 rsync -a --checksum --delete \
   --exclude='node_modules' \
   --exclude='.git' \
@@ -114,12 +115,22 @@ check "credentials.json"                       "keystorePath"                 "c
 
 [[ $_fail -eq 1 ]] && exit 1
 
-# ─── 2. Install deps ──────────────────────────────────────────────────────────
+# ─── 2. Patch versionCode + versionName in build.gradle ──────────────────────
+# Android requires versionCode to increase with every install — without this
+# the device refuses to update the installed APK.
+GRADLE_FILE="$WSL_DST/apps/mobile/android/app/build.gradle"
+sed -i "s/VERSION_CODE\.toInteger()/$VERSION_CODE/" "$GRADLE_FILE" 2>/dev/null || true
+sed -i "s/VERSION_CODE/$VERSION_CODE/g" "$GRADLE_FILE"
+sed -i "s/VERSION_NAME/\"$NEW_VERSION\"/" "$GRADLE_FILE" 2>/dev/null || true
+sed -i "s/VERSION_NAME/$NEW_VERSION/g" "$GRADLE_FILE"
+echo "▶ Set versionCode=$VERSION_CODE versionName=$NEW_VERSION in build.gradle"
+
+# ─── 3. Install deps ──────────────────────────────────────────────────────────
 echo "▶ Installing dependencies..."
 cd "$WSL_DST"
-pnpm install --no-frozen-lockfile
+pnpm install --no-frozen-lockfile --silent
 
-# ─── 2b. Patch gradlew — inject JAVA_HOME + sdk.dir at runtime inside EAS temp dir
+# ─── 3b. Patch gradlew — inject JAVA_HOME + sdk.dir at runtime inside EAS temp dir
 GRADLEW="$WSL_DST/apps/mobile/android/gradlew"
 # Remove previous patch lines
 sed -i '/^export JAVA_HOME=.*jdk/d' "$GRADLEW"
@@ -128,8 +139,7 @@ sed -i '/^export CMAKE_BUILD_PARALLEL_LEVEL=/d' "$GRADLEW"
 # Inject after shebang:
 #  - JAVA_HOME so Gradle finds the JDK
 #  - sdk.dir so Android Gradle Plugin finds the SDK
-#  - CMAKE_BUILD_PARALLEL_LEVEL=1 so cmake --build invokes ninja with -j1,
-#    preventing multiple Clang processes from exhausting RAM during native compilation
+#  - CMAKE_BUILD_PARALLEL_LEVEL=1 prevents multiple Clang processes exhausting RAM
 sed -i "1a export JAVA_HOME=\"$JAVA_HOME\"\nexport CMAKE_BUILD_PARALLEL_LEVEL=1\necho \"sdk.dir=$ANDROID_HOME\" > \"\$(dirname \"\$0\")/local.properties\"" "$GRADLEW"
 echo "▶ Patched gradlew with JAVA_HOME=$JAVA_HOME + sdk.dir=$ANDROID_HOME + CMAKE_BUILD_PARALLEL_LEVEL=1"
 
@@ -148,9 +158,7 @@ node -e "
 "
 echo "▶ Injected JAVA_HOME + ANDROID_HOME into eas.json preview env"
 
-# ─── 2c. Ensure enough virtual memory for native C++ compilation ─────────────
-# cmake --build spawns multiple Clang processes; without swap they exhaust RAM
-# and kill the Gradle daemon. Create a 4 GB swap file if one isn't active.
+# ─── 3c. Ensure enough virtual memory for native C++ compilation ──────────────
 SWAP_FILE="$HOME/build-swap"
 if ! swapon --show 2>/dev/null | grep -q "$SWAP_FILE"; then
   echo "▶ Creating 4 GB swap file (needed for C++ compilation)..."
@@ -169,15 +177,12 @@ else
   echo "  ✔ Swap already active"
 fi
 
-# ─── 3. Kill stale Gradle daemons ────────────────────────────────────────────
-# Gradle reuses daemons across builds. If a daemon started without
-# CMAKE_BUILD_PARALLEL_LEVEL in its env, it won't pick up the new value.
-# Kill all daemons so fresh ones start with the correct environment.
+# ─── 4. Kill stale Gradle daemons ────────────────────────────────────────────
 echo "▶ Stopping Gradle daemons..."
 "$WSL_DST/apps/mobile/android/gradlew" -p "$WSL_DST/apps/mobile/android" --stop 2>/dev/null || true
 pkill -f "GradleDaemon" 2>/dev/null || true
 
-# ─── 4. Clear ALL caches ─────────────────────────────────────────────────────
+# ─── 5. Clear ALL caches ─────────────────────────────────────────────────────
 echo "▶ Clearing all caches..."
 
 _removed=0
@@ -206,7 +211,7 @@ _rm_verbose "~/.eas-build"             "$HOME/.eas-build"
 
 [[ $_removed -eq 1 ]] && echo "  ✔ All caches cleared" || echo "  ⚠ No caches found — already clean (stale bundle risk!)"
 
-# ─── 5. Stamp build version ───────────────────────────────────────────────────
+# ─── 6. Stamp build version ──────────────────────────────────────────────────
 BUILD_TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
 export EXPO_PUBLIC_BUILD_VERSION="$NEW_VERSION"
 export EXPO_PUBLIC_BUILD_DATE="$BUILD_TIMESTAMP"
@@ -228,13 +233,14 @@ node -e "
 "
 echo "  eas.json preview.env updated ✔"
 
+# ─── 7. Build ─────────────────────────────────────────────────────────────────
 echo "▶ Building APK (this may take a few minutes)..."
 BUILD_START=$(date +%s)
 cd "$WSL_DST/apps/mobile"
 EXPO_NO_METRO_CACHE=1 METRO_RESET_CACHE=true eas build -p android --profile preview --local --clear-cache
 BUILD_END=$(date +%s)
 
-# ─── 4. Locate APK ────────────────────────────────────────────────────────────
+# ─── 8. Locate APK ────────────────────────────────────────────────────────────
 APK=$(find "$WSL_DST/apps/mobile" -maxdepth 2 -name "*.apk" | tail -1)
 
 if [[ -z "$APK" ]]; then
@@ -242,18 +248,47 @@ if [[ -z "$APK" ]]; then
   exit 1
 fi
 
-# ─── 5. Copy to OneDrive ──────────────────────────────────────────────────────
+APK_SIZE=$(du -sh "$APK" | cut -f1)
+APK_MTIME=$(stat -c '%y' "$APK" | cut -d'.' -f1)
+echo "▶ APK: $APK ($APK_SIZE, modified $APK_MTIME)"
+
+# ─── 8b. Verify bundle contains expected version ──────────────────────────────
+echo "▶ Verifying bundle contains expected version..."
+VERIFY_DIR=$(mktemp -d)
+unzip -q "$APK" "assets/index.android.bundle" -d "$VERIFY_DIR" 2>/dev/null || \
+  unzip -q "$APK" "assets/*.bundle" -d "$VERIFY_DIR" 2>/dev/null || true
+
+BUNDLE=$(find "$VERIFY_DIR" -name "*.bundle" | head -1)
+if [[ -n "$BUNDLE" ]]; then
+  BUNDLE_SIZE=$(du -sh "$BUNDLE" | cut -f1)
+  if strings "$BUNDLE" 2>/dev/null | grep -q "$NEW_VERSION"; then
+    echo "  ✔ Bundle ($BUNDLE_SIZE) contains version $NEW_VERSION — FRESH"
+  else
+    FOUND_VER=$(strings "$BUNDLE" 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+' | head -5 | tr '\n' ' ' || true)
+    echo "  ✗ Bundle ($BUNDLE_SIZE) does NOT contain '$NEW_VERSION'"
+    echo "    Versions found in bundle: ${FOUND_VER:-none}"
+    echo "    ⚠ Stale bundle suspected — cache clear may have failed"
+  fi
+else
+  echo "  ⚠ Could not extract bundle from APK (install: sudo apt install unzip binutils)"
+fi
+rm -rf "$VERIFY_DIR"
+
+# ─── 9. Copy to OneDrive ──────────────────────────────────────────────────────
 DEST="$OUTPUT_DIR/BudgetApp_V$NEW_VERSION.apk"
 echo "▶ Copying to: $DEST"
 cp "$APK" "$DEST"
 
-# ─── 6. Save version ──────────────────────────────────────────────────────────
+# ─── 10. Save version ─────────────────────────────────────────────────────────
 echo "$NEW_VERSION" > "$VERSION_FILE"
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 ELAPSED=$(( $(date +%s) - BUILD_START ))
 echo ""
-echo "✔ Done in ${ELAPSED}s"
-echo "  APK: BudgetApp_V$NEW_VERSION.apk"
-echo "  Dir: $OUTPUT_DIR"
+echo "╔══════════════════════════════════════╗"
+echo "║  Build complete in ${ELAPSED}s"
+echo "║  APK:         BudgetApp_V$NEW_VERSION.apk"
+echo "║  versionCode: $VERSION_CODE"
+echo "║  Dir:         $OUTPUT_DIR"
+echo "╚══════════════════════════════════════╝"
 echo ""
