@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Modal } from 'react-native';
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Modal, Share } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -28,9 +26,8 @@ export default function SettingsScreen() {
   const [saving, setSaving]         = useState(false);
   const [importing, setImporting]   = useState(false);
   const [importVisible, setImportVisible] = useState(false);
-  const [importJson, setImportJson] = useState('');
+  const [importText, setImportText] = useState('');
 
-  // Privacy
   const [incomeCategories, setIncomeCategories] = useState<Category[]>([]);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [catPickerVisible, setCatPickerVisible] = useState(false);
@@ -48,15 +45,14 @@ export default function SettingsScreen() {
   async function handleSave() {
     setSaving(true);
     try {
-      const updated: Partial<AppSettings> = {
-        daily_limit:          parseFloat(dailyLimit) || 0,
-        monthly_savings:      parseFloat(savings)    || 0,
-        auto_rollover:        settings.auto_rollover,
-        privacy_hide_income:  settings.privacy_hide_income,
-        privacy_biometric:    settings.privacy_biometric,
-        privacy_hide_cats:    settings.privacy_hide_cats,
-      };
-      await saveSettings(updated);
+      await saveSettings({
+        daily_limit:         parseFloat(dailyLimit) || 0,
+        monthly_savings:     parseFloat(savings)    || 0,
+        auto_rollover:       settings.auto_rollover,
+        privacy_hide_income: settings.privacy_hide_income,
+        privacy_biometric:   settings.privacy_biometric,
+        privacy_hide_cats:   settings.privacy_hide_cats,
+      });
       Alert.alert('Saved', 'Settings updated.');
     } finally {
       setSaving(false);
@@ -64,38 +60,32 @@ export default function SettingsScreen() {
   }
 
   async function handleRollover() {
-    Alert.alert(
-      'Run Rollover',
-      'This will carry last month\'s remaining balance to this month. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Continue', onPress: async () => {
-          const result = await rolloverFromPreviousMonth();
-          Alert.alert('Done', `€${result.amount.toFixed(2)} leftover from ${result.fromMonth} rolled over.`);
-        }},
-      ]
-    );
+    Alert.alert('Run Rollover', "This will carry last month's remaining balance to this month. Continue?", [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Continue', onPress: async () => {
+        const result = await rolloverFromPreviousMonth();
+        Alert.alert('Done', `€${result.amount.toFixed(2)} leftover from ${result.fromMonth} rolled over.`);
+      }},
+    ]);
   }
 
   async function handleExport() {
     try {
-      const json = await exportAllData();
-      const date = new Date().toISOString().slice(0, 10);
-      const path = `${FileSystem.cacheDirectory}budget-export-${date}.json`;
-      await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
-      await Sharing.shareAsync(path, { mimeType: 'application/json', dialogTitle: 'Save Budget Export' });
+      const data = await exportAllData();
+      await Share.share({ message: data, title: 'BudgetApp Export' });
     } catch (e: any) {
       Alert.alert('Export Failed', e.message);
     }
   }
 
   async function handleImportConfirm() {
-    if (!importJson.trim()) return Alert.alert('Paste your exported JSON first.');
+    const text = importText.trim();
+    if (!text) return Alert.alert('Error', 'Paste your exported data first.');
     setImporting(true);
     try {
-      await importAllData(importJson.trim());
+      await importAllData(text);
       setImportVisible(false);
-      setImportJson('');
+      setImportText('');
       Alert.alert('Success', 'Data imported successfully.');
     } catch (e: any) {
       Alert.alert('Import Failed', e.message);
@@ -130,10 +120,12 @@ export default function SettingsScreen() {
             {themeOptions.map(opt => (
               <TouchableOpacity
                 key={opt.value}
-                style={[s.themeBtn, { borderColor: colors.border, backgroundColor: colors.surface }, mode === opt.value && { borderColor: staticColors.primary, backgroundColor: `${staticColors.primary}22` }]}
+                style={[s.themeBtn, { borderColor: colors.border, backgroundColor: colors.surface },
+                  mode === opt.value && { borderColor: staticColors.primary, backgroundColor: staticColors.primary + '22' }]}
                 onPress={() => { setMode(opt.value); saveSettings({ theme: opt.value }); }}
               >
-                <Text style={[s.themeBtnText, { color: colors.textMuted }, mode === opt.value && { color: staticColors.primary, fontWeight: '700' }]}>{opt.label}</Text>
+                <Text style={[s.themeBtnText, { color: colors.textMuted },
+                  mode === opt.value && { color: staticColors.primary, fontWeight: '700' }]}>{opt.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -212,7 +204,7 @@ export default function SettingsScreen() {
         {/* Privacy */}
         <View style={s.section}>
           <Text style={[s.sectionTitle, { color: colors.text }]}>Privacy</Text>
-          <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Hide income figures on the dashboard. Use the eye icon to reveal them temporarily.</Text>
+          <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Hide income figures on the dashboard.</Text>
 
           <View style={[s.row, { marginBottom: spacing.md }]}>
             <View style={{ flex: 1 }}>
@@ -242,7 +234,6 @@ export default function SettingsScreen() {
                   />
                 </View>
               )}
-
               <Text style={[s.rowLabel, { color: colors.text, marginBottom: spacing.xs }]}>Which income to hide:</Text>
               <View style={[s.row, { gap: spacing.sm, marginBottom: spacing.sm }]}>
                 <TouchableOpacity
@@ -268,7 +259,6 @@ export default function SettingsScreen() {
 
         <View style={[s.divider, { backgroundColor: colors.border }]} />
 
-        {/* Manage Categories */}
         <TouchableOpacity style={[s.linkRow, { borderBottomColor: colors.border }]} onPress={() => router.push('/manage-categories')}>
           <Text style={[s.linkText, { color: colors.text }]}>Manage Categories</Text>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
@@ -279,10 +269,11 @@ export default function SettingsScreen() {
         {/* Data */}
         <View style={s.section}>
           <Text style={[s.sectionTitle, { color: colors.text }]}>Data</Text>
+          <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Export shares your data as text. To import, paste that text back.</Text>
 
           <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.primary, marginBottom: spacing.sm }]} onPress={handleExport}>
             <Ionicons name="share-outline" size={16} color={staticColors.primary} />
-            <Text style={[s.secondaryBtnText, { color: staticColors.primary }]}>Export Data (.json)</Text>
+            <Text style={[s.secondaryBtnText, { color: staticColors.primary }]}>Export Data</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.warning }]} onPress={() => setImportVisible(true)}>
@@ -296,9 +287,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
 
         <View style={s.buildInfo}>
-          <Text style={[s.buildInfoText, { color: colors.textSubtle }]}>
-            v{BUILD_VERSION} · built {BUILD_DATE}
-          </Text>
+          <Text style={[s.buildInfoText, { color: colors.textSubtle }]}>v{BUILD_VERSION} · built {BUILD_DATE}</Text>
         </View>
       </ScrollView>
 
@@ -309,8 +298,7 @@ export default function SettingsScreen() {
             <Text style={[s.modalTitle, { color: colors.text }]}>Select Income Categories to Hide</Text>
             <ScrollView style={{ maxHeight: 300, marginBottom: spacing.md }}>
               {incomeCategories.map(c => {
-                const selected = settings.privacy_hide_cats !== 'all' &&
-                  settings.privacy_hide_cats.split(',').includes(c.id);
+                const selected = settings.privacy_hide_cats !== 'all' && settings.privacy_hide_cats.split(',').includes(c.id);
                 return (
                   <TouchableOpacity
                     key={c.id}
@@ -327,38 +315,41 @@ export default function SettingsScreen() {
                 );
               })}
             </ScrollView>
-            <View style={s.modalActions}>
-              <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.primary, backgroundColor: staticColors.primary }]} onPress={() => setCatPickerVisible(false)}>
-                <Text style={[s.modalBtnText, { color: '#fff' }]}>Done</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.primary, backgroundColor: staticColors.primary }]} onPress={() => setCatPickerVisible(false)}>
+              <Text style={[s.modalBtnText, { color: '#fff' }]}>Done</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Import Modal — paste exported JSON */}
+      {/* Import Modal */}
       <Modal visible={importVisible} animationType="slide" transparent>
         <View style={s.modalOverlay}>
           <View style={[s.modalBox, { backgroundColor: colors.surface }]}>
             <Text style={[s.modalTitle, { color: colors.text }]}>Import Data</Text>
-            <Text style={[s.sectionDesc, { color: colors.textMuted }]}>
-              Paste the contents of your exported budget JSON file below.
-            </Text>
+            <Text style={[s.sectionDesc, { color: colors.textMuted }]}>Paste your exported budget data below.</Text>
             <TextInput
               style={[s.importInput, { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }]}
               multiline
-              placeholder="Paste JSON here…"
+              placeholder="Paste exported data here…"
               placeholderTextColor={colors.textSubtle}
-              value={importJson}
-              onChangeText={setImportJson}
+              value={importText}
+              onChangeText={setImportText}
               autoCapitalize="none"
               autoCorrect={false}
             />
             <View style={s.modalActions}>
-              <TouchableOpacity style={[s.modalBtn, { borderColor: colors.border, backgroundColor: colors.surfaceHigh }]} onPress={() => { setImportVisible(false); setImportJson(''); }}>
+              <TouchableOpacity
+                style={[s.modalBtn, { borderColor: colors.border, backgroundColor: colors.surfaceHigh }]}
+                onPress={() => { setImportVisible(false); setImportText(''); }}
+              >
                 <Text style={[s.modalBtnText, { color: colors.textMuted }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.warning, backgroundColor: staticColors.warning, opacity: importing ? 0.6 : 1 }]} onPress={handleImportConfirm} disabled={importing}>
+              <TouchableOpacity
+                style={[s.modalBtn, { borderColor: staticColors.warning, backgroundColor: staticColors.warning, opacity: importing ? 0.6 : 1 }]}
+                onPress={handleImportConfirm}
+                disabled={importing}
+              >
                 <Text style={[s.modalBtnText, { color: '#fff' }]}>{importing ? 'Importing…' : 'Import'}</Text>
               </TouchableOpacity>
             </View>
