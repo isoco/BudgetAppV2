@@ -1,17 +1,17 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Modal } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { getSettings, saveSettings, rolloverFromPreviousMonth, exportAllData, importAllData, AppSettings, getCategories, Category } from '../src/db/queries';
-const BUILD_VERSION = process.env.EXPO_PUBLIC_BUILD_VERSION ?? 'dev';
-const BUILD_DATE    = process.env.EXPO_PUBLIC_BUILD_DATE    ?? 'dev';
 import { useTheme } from '../src/theme/useTheme';
 import { useThemeStore } from '../src/store/themeStore';
 import { colors as staticColors, spacing, radius, typography } from '../src/theme';
+
+const BUILD_VERSION = process.env.EXPO_PUBLIC_BUILD_VERSION ?? 'dev';
+const BUILD_DATE    = process.env.EXPO_PUBLIC_BUILD_DATE    ?? 'dev';
 
 const PRIVACY_DEFAULTS: Pick<AppSettings, 'privacy_hide_income' | 'privacy_biometric' | 'privacy_hide_cats'> = {
   privacy_hide_income: false,
@@ -26,7 +26,9 @@ export default function SettingsScreen() {
   const [dailyLimit, setDailyLimit] = useState('');
   const [savings, setSavings]       = useState('');
   const [saving, setSaving]         = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting]   = useState(false);
+  const [importVisible, setImportVisible] = useState(false);
+  const [importJson, setImportJson] = useState('');
 
   // Privacy
   const [incomeCategories, setIncomeCategories] = useState<Category[]>([]);
@@ -87,13 +89,13 @@ export default function SettingsScreen() {
     }
   }
 
-  async function handleImport() {
+  async function handleImportConfirm() {
+    if (!importJson.trim()) return Alert.alert('Paste your exported JSON first.');
+    setImporting(true);
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
-      if (result.canceled) return;
-      setImporting(true);
-      const json = await FileSystem.readAsStringAsync(result.assets[0].uri, { encoding: FileSystem.EncodingType.UTF8 });
-      await importAllData(json);
+      await importAllData(importJson.trim());
+      setImportVisible(false);
+      setImportJson('');
       Alert.alert('Success', 'Data imported successfully.');
     } catch (e: any) {
       Alert.alert('Import Failed', e.message);
@@ -280,12 +282,12 @@ export default function SettingsScreen() {
 
           <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.primary, marginBottom: spacing.sm }]} onPress={handleExport}>
             <Ionicons name="share-outline" size={16} color={staticColors.primary} />
-            <Text style={[s.secondaryBtnText, { color: staticColors.primary }]}>Export Data</Text>
+            <Text style={[s.secondaryBtnText, { color: staticColors.primary }]}>Export Data (.json)</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.warning }]} onPress={handleImport} disabled={importing}>
+          <TouchableOpacity style={[s.secondaryBtn, { borderColor: staticColors.warning }]} onPress={() => setImportVisible(true)}>
             <Ionicons name="download-outline" size={16} color={staticColors.warning} />
-            <Text style={[s.secondaryBtnText, { color: staticColors.warning }]}>{importing ? 'Importing…' : 'Import Data'}</Text>
+            <Text style={[s.secondaryBtnText, { color: staticColors.warning }]}>Import Data</Text>
           </TouchableOpacity>
         </View>
 
@@ -334,6 +336,36 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
+      {/* Import Modal — paste exported JSON */}
+      <Modal visible={importVisible} animationType="slide" transparent>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { backgroundColor: colors.surface }]}>
+            <Text style={[s.modalTitle, { color: colors.text }]}>Import Data</Text>
+            <Text style={[s.sectionDesc, { color: colors.textMuted }]}>
+              Paste the contents of your exported budget JSON file below.
+            </Text>
+            <TextInput
+              style={[s.importInput, { backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }]}
+              multiline
+              placeholder="Paste JSON here…"
+              placeholderTextColor={colors.textSubtle}
+              value={importJson}
+              onChangeText={setImportJson}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={s.modalActions}>
+              <TouchableOpacity style={[s.modalBtn, { borderColor: colors.border, backgroundColor: colors.surfaceHigh }]} onPress={() => { setImportVisible(false); setImportJson(''); }}>
+                <Text style={[s.modalBtnText, { color: colors.textMuted }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.modalBtn, { borderColor: staticColors.warning, backgroundColor: staticColors.warning, opacity: importing ? 0.6 : 1 }]} onPress={handleImportConfirm} disabled={importing}>
+                <Text style={[s.modalBtnText, { color: '#fff' }]}>{importing ? 'Importing…' : 'Import'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -374,4 +406,5 @@ const s = StyleSheet.create({
   modalActions:    { flexDirection: 'row', gap: spacing.sm },
   modalBtn:        { flex: 1, borderWidth: 1, borderRadius: radius.md, padding: spacing.md, alignItems: 'center' },
   modalBtnText:    { ...typography.base, fontWeight: '600' },
+  importInput:     { borderWidth: 1, borderRadius: radius.md, padding: spacing.md, height: 160, textAlignVertical: 'top', ...typography.sm, marginBottom: spacing.md },
 });
