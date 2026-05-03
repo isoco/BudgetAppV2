@@ -138,12 +138,8 @@ node -e "
 "
 echo "▶ Set version=$NEW_VERSION versionCode=$VERSION_CODE in app.json"
 
-# ─── 3. Install deps ──────────────────────────────────────────────────────────
-echo "▶ Installing dependencies..."
-cd "$WSL_DST"
-pnpm install --no-frozen-lockfile --silent
-
-# ─── 3b. Ensure swap for C++ compilation ─────────────────────────────────────
+# ─── 3. Ensure swap for C++ compilation ──────────────────────────────────────
+# (deps installed AFTER cache wipe below)
 SWAP_FILE="$HOME/build-swap"
 if ! swapon --show 2>/dev/null | grep -q "$SWAP_FILE"; then
   echo "▶ Creating 4 GB swap file..."
@@ -173,47 +169,56 @@ echo "▶ Patched gradlew (JAVA_HOME + CMAKE_BUILD_PARALLEL_LEVEL=1 + sdk.dir)"
 echo "▶ Stopping Gradle daemons..."
 "$GRADLEW" -p "$WSL_DST/apps/mobile/android" --stop 2>/dev/null || true
 pkill -f "GradleDaemon" 2>/dev/null || true
+pkill -f "gradle" 2>/dev/null || true
 
-# ─── 5. Clear ALL caches ─────────────────────────────────────────────────────
-echo "▶ Clearing all caches..."
+# ─── 5. Nuclear cache wipe — zero memory of previous builds ──────────────────
+echo "▶ Wiping ALL caches and build artifacts (zero-cache build)..."
 
-_removed=0
-_rm_verbose() {
+_nuke() {
   local label="$1"; shift
   local found=0
   for p in "$@"; do
-    # expand globs manually so we can count
     for match in $p; do
       [[ -e "$match" ]] || continue
       rm -rf "$match"
       found=1
-      _removed=1
     done
   done
-  if [[ $found -eq 1 ]]; then
-    echo "  ✔ cleared: $label"
-  else
-    echo "  ○ already clean: $label"
-  fi
+  [[ $found -eq 1 ]] && echo "  ✔ nuked: $label" || echo "  ○ already gone: $label"
 }
 
-_rm_verbose "Metro/Expo JS cache"       "$HOME/.expo/metro-cache" "$HOME/.expo/cache"
-_rm_verbose "mobile .expo/.metro"       "$WSL_DST/apps/mobile/.expo" "$WSL_DST/apps/mobile/.metro"
-_rm_verbose "node_modules/.cache"       "$WSL_DST/node_modules/.cache"
-_rm_verbose "Gradle build-cache"        "$HOME/.gradle/caches"/build-cache-*
-_rm_verbose "Gradle transforms"         "$HOME/.gradle/caches"/transforms-*
-_rm_verbose "android/app/build output" "$WSL_DST/apps/mobile/android/app/build"
-_rm_verbose "android/.gradle"          "$WSL_DST/apps/mobile/android/.gradle"
-_rm_verbose "/tmp metro/haste/eas dirs" \
-  "$(find /tmp -maxdepth 1 \( -name 'metro-*' -o -name 'haste-map-*' -o -name 'eas-build-*' \) 2>/dev/null | tr '\n' ' ')" \
-  "$(find /tmp -maxdepth 2 -name 'eas-build-*' 2>/dev/null | tr '\n' ' ')"
-_rm_verbose "~/.eas-build"             "$HOME/.eas-build"
+# Metro / Expo JS caches
+_nuke "Metro/Expo JS cache"        "$HOME/.expo/metro-cache" "$HOME/.expo/cache"
+_nuke "mobile .expo/.metro"        "$WSL_DST/apps/mobile/.expo" "$WSL_DST/apps/mobile/.metro"
 
-if [[ $_removed -eq 1 ]]; then
-  echo "  ✔ All caches cleared"
-else
-  echo "  ⚠ No caches found — everything was already clean (stale bundle risk!)"
-fi
+# /tmp ephemeral build dirs
+while IFS= read -r p; do rm -rf "$p"; done < <(find /tmp -maxdepth 2 \( -name 'metro-*' -o -name 'haste-map-*' -o -name 'eas-build-*' -o -name 'react-native-*' \) 2>/dev/null)
+echo "  ✔ nuked: /tmp metro/haste/eas/RN dirs"
+
+# EAS local build cache
+_nuke "~/.eas-build"               "$HOME/.eas-build"
+
+# All Gradle caches and daemon state — full wipe
+_nuke "Gradle caches (full)"       "$HOME/.gradle/caches"
+_nuke "Gradle daemon logs"         "$HOME/.gradle/daemon"
+_nuke "Gradle native"              "$HOME/.gradle/native"
+
+# Android project build outputs and incremental state
+_nuke "android/app/build"          "$WSL_DST/apps/mobile/android/app/build"
+_nuke "android/build"              "$WSL_DST/apps/mobile/android/build"
+_nuke "android/.gradle"            "$WSL_DST/apps/mobile/android/.gradle"
+
+# node_modules — full reinstall guarantees no stale JS transforms
+_nuke "root node_modules"          "$WSL_DST/node_modules"
+_nuke "mobile node_modules"        "$WSL_DST/apps/mobile/node_modules"
+_nuke "node_modules/.cache"        "$WSL_DST/node_modules/.cache"
+
+echo "  ✔ Zero-cache wipe complete"
+
+# ─── 5b. Fresh dep install (after wipe) ──────────────────────────────────────
+echo "▶ Installing dependencies (fresh)..."
+cd "$WSL_DST"
+pnpm install --no-frozen-lockfile
 
 # ─── 6. Stamp build version ──────────────────────────────────────────────────
 # Export as real shell env vars — Metro inlines EXPO_PUBLIC_* from the process
