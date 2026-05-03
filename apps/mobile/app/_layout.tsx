@@ -18,6 +18,7 @@ export default function RootLayout() {
     getDb()
       .then(() => getSettings())
       .then(s => { if (s.theme) setMode(s.theme); })
+      .catch(e => console.error('[layout] DB init failed:', e?.message, e))
       .finally(() => setReady(true));
   }, []);
 

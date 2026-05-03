@@ -128,9 +128,12 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
         try {
           await db.execAsync(MIGRATIONS[i]);
         } catch (e: any) {
-          // ALTER TABLE "duplicate column" is safe to ignore; anything else is a real error
-          if (!e?.message?.includes('duplicate column')) {
-            console.error(`Migration ${i + 1} failed: ${e?.message}`);
+          // Safe to ignore: table already exists or column already exists.
+          // Android SQLite: "table X already has a column named Y"
+          // Other SQLite:   "duplicate column name: Y"
+          const msg: string = e?.message ?? '';
+          if (!msg.includes('duplicate column') && !msg.includes('already has a column')) {
+            console.error(`Migration ${i + 1} failed: ${msg}`);
             throw e;
           }
         }
