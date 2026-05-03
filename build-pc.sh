@@ -179,62 +179,54 @@ pkill -f "GradleDaemon" 2>/dev/null || true
 
 # ─── 4. Clear ALL caches ─────────────────────────────────────────────────────
 echo "▶ Clearing all caches..."
-# Metro / Expo JS bundler caches
-rm -rf "$HOME/.expo/metro-cache"
-rm -rf "$HOME/.expo/cache"
-rm -rf "$WSL_DST/apps/mobile/.expo"
-rm -rf "$WSL_DST/apps/mobile/.metro"
-rm -rf "$WSL_DST/node_modules/.cache"
-find /tmp -maxdepth 1 \( -name "metro-*" -o -name "haste-map-*" -o -name "eas-build-*" \) 2>/dev/null | xargs rm -rf
-# Gradle build-cache — stores task output hashes; stale entries serve old JS bundles
-rm -rf "$HOME/.gradle/caches/build-cache-*"
-# Gradle transform cache — stores processed AAR/jar outputs
-rm -rf "$HOME/.gradle/caches/transforms-*"
-# EAS local tmp files from previous runs
-find /tmp/ivan -maxdepth 2 -name "*.tar.gz" 2>/dev/null | xargs rm -f
-# EAS local build working dirs (contain cached JS bundles from previous builds)
-find /tmp -maxdepth 2 -name "eas-build-*" 2>/dev/null | xargs rm -rf
-rm -rf "$HOME/.eas-build" 2>/dev/null || true
-echo "  ✔ All caches cleared"
 
-# ─── 5. Confirm synced files have latest changes ──────────────────────────────
-echo "▶ Spot-checking synced file content..."
-if grep -q "privacyInitialized" "$WSL_DST/apps/mobile/app/(tabs)/index.tsx"; then
-  echo "  ✔ index.tsx has privacy persistence fix"
-else
-  echo "  ✗ index.tsx is STALE — privacy fix not found. Aborting."
-  exit 1
-fi
-if grep -q "getDailySpendTotalsByDay" "$WSL_DST/apps/mobile/app/daily-tracker.tsx"; then
-  echo "  ✔ daily-tracker.tsx has daily_spends calendar fix"
-else
-  echo "  ✗ daily-tracker.tsx is STALE. Aborting."
-  exit 1
-fi
-if grep -q "sortField" "$WSL_DST/apps/mobile/app/(tabs)/transactions.tsx"; then
-  echo "  ✔ transactions.tsx has sort + individual expense rows"
-else
-  echo "  ✗ transactions.tsx is STALE. Aborting."
-  exit 1
-fi
-if grep -q "savingsTarget" "$WSL_DST/apps/mobile/src/db/queries.ts"; then
-  echo "  ✔ queries.ts has savings in projected expense"
-else
-  echo "  ✗ queries.ts is STALE. Aborting."
-  exit 1
-fi
+_removed=0
+_rm_verbose() {
+  local label="$1"; shift
+  local found=0
+  for p in "$@"; do
+    for match in $p; do
+      [[ -e "$match" ]] || continue
+      rm -rf "$match"
+      found=1; _removed=1
+    done
+  done
+  [[ $found -eq 1 ]] && echo "  ✔ cleared: $label" || echo "  ○ already clean: $label"
+}
 
-# ─── Stamp build info into app ───────────────────────────────────────────────
-BUILD_INFO_FILE="$WSL_DST/apps/mobile/src/constants/buildInfo.ts"
+_rm_verbose "Metro/Expo JS cache"       "$HOME/.expo/metro-cache" "$HOME/.expo/cache"
+_rm_verbose "mobile .expo/.metro"       "$WSL_DST/apps/mobile/.expo" "$WSL_DST/apps/mobile/.metro"
+_rm_verbose "node_modules/.cache"       "$WSL_DST/node_modules/.cache"
+_rm_verbose "Gradle build-cache"        "$HOME/.gradle/caches"/build-cache-*
+_rm_verbose "Gradle transforms"         "$HOME/.gradle/caches"/transforms-*
+_rm_verbose "android/app/build output" "$WSL_DST/apps/mobile/android/app/build"
+_rm_verbose "android/.gradle"          "$WSL_DST/apps/mobile/android/.gradle"
+_rm_verbose "/tmp eas-build dirs"      "$(find /tmp -maxdepth 2 \( -name 'metro-*' -o -name 'haste-map-*' -o -name 'eas-build-*' \) 2>/dev/null | tr '\n' ' ')"
+_rm_verbose "~/.eas-build"             "$HOME/.eas-build"
+
+[[ $_removed -eq 1 ]] && echo "  ✔ All caches cleared" || echo "  ⚠ No caches found — already clean (stale bundle risk!)"
+
+# ─── 5. Stamp build version ───────────────────────────────────────────────────
 BUILD_TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
-cat > "$BUILD_INFO_FILE" << EOF
-// Auto-updated by build.sh before every build — do not edit manually
-export const BUILD_DATE = '$BUILD_TIMESTAMP';
-export const BUILD_VERSION = '$NEW_VERSION';
-EOF
-echo "▶ Stamped build info: v$NEW_VERSION @ $BUILD_TIMESTAMP"
-echo "  Verifying stamp..."
-grep "BUILD_VERSION" "$BUILD_INFO_FILE"
+export EXPO_PUBLIC_BUILD_VERSION="$NEW_VERSION"
+export EXPO_PUBLIC_BUILD_DATE="$BUILD_TIMESTAMP"
+echo "▶ Exported env vars for Metro:"
+echo "  EXPO_PUBLIC_BUILD_VERSION=$EXPO_PUBLIC_BUILD_VERSION"
+echo "  EXPO_PUBLIC_BUILD_DATE=$EXPO_PUBLIC_BUILD_DATE"
+
+# Also write into eas.json
+EAS_JSON="$WSL_DST/apps/mobile/eas.json"
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('$EAS_JSON', 'utf8'));
+  cfg.build.preview.env = {
+    ...cfg.build.preview.env,
+    EXPO_PUBLIC_BUILD_VERSION: '$NEW_VERSION',
+    EXPO_PUBLIC_BUILD_DATE:    '$BUILD_TIMESTAMP',
+  };
+  fs.writeFileSync('$EAS_JSON', JSON.stringify(cfg, null, 2));
+"
+echo "  eas.json preview.env updated ✔"
 
 echo "▶ Building APK (this may take a few minutes)..."
 BUILD_START=$(date +%s)

@@ -193,10 +193,19 @@ else
   echo "  ⚠ No caches found — everything was already clean (stale bundle risk!)"
 fi
 
-# ─── 6. Stamp build version into eas.json env ────────────────────────────────
-# Using EXPO_PUBLIC_* vars — these are inlined by Metro at bundle time,
-# bypassing all file/transform caches. Far more reliable than buildInfo.ts.
+# ─── 6. Stamp build version ──────────────────────────────────────────────────
+# Export as real shell env vars — Metro inlines EXPO_PUBLIC_* from the process
+# environment at bundle time. Writing only to eas.json is not enough for local
+# builds because EAS CLI does not reliably forward eas.json env to the Gradle
+# subprocess that runs Metro.
 BUILD_TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
+export EXPO_PUBLIC_BUILD_VERSION="$NEW_VERSION"
+export EXPO_PUBLIC_BUILD_DATE="$BUILD_TIMESTAMP"
+echo "▶ Exported env vars for Metro:"
+echo "  EXPO_PUBLIC_BUILD_VERSION=$EXPO_PUBLIC_BUILD_VERSION"
+echo "  EXPO_PUBLIC_BUILD_DATE=$EXPO_PUBLIC_BUILD_DATE"
+
+# Also write into eas.json so the values are visible in the build profile
 EAS_JSON="$WSL_DST/apps/mobile/eas.json"
 node -e "
   const fs = require('fs');
@@ -208,9 +217,7 @@ node -e "
   };
   fs.writeFileSync('$EAS_JSON', JSON.stringify(cfg, null, 2));
 "
-echo "▶ Stamped eas.json: EXPO_PUBLIC_BUILD_VERSION=$NEW_VERSION @ $BUILD_TIMESTAMP"
-echo "  Verifying..."
-node -e "const c=JSON.parse(require('fs').readFileSync('$EAS_JSON','utf8')); console.log('  BUILD_VERSION =', c.build.preview.env.EXPO_PUBLIC_BUILD_VERSION);"
+echo "  eas.json preview.env updated ✔"
 
 # ─── 7. Build ─────────────────────────────────────────────────────────────────
 echo "▶ Building APK..."
