@@ -154,21 +154,44 @@ pkill -f "GradleDaemon" 2>/dev/null || true
 
 # ─── 5. Clear ALL caches ─────────────────────────────────────────────────────
 echo "▶ Clearing all caches..."
-# Metro / Expo JS bundler caches
-rm -rf "$HOME/.expo/metro-cache" "$HOME/.expo/cache"
-rm -rf "$WSL_DST/apps/mobile/.expo" "$WSL_DST/apps/mobile/.metro"
-rm -rf "$WSL_DST/node_modules/.cache"
-# Gradle build-cache and transform cache
-rm -rf "$HOME/.gradle/caches/build-cache-*"
-rm -rf "$HOME/.gradle/caches/transforms-*"
-# Gradle build OUTPUT — critical: forces fresh JS bundle, not cached from v1.33
-rm -rf "$WSL_DST/apps/mobile/android/app/build"
-rm -rf "$WSL_DST/apps/mobile/android/.gradle"
-# EAS local build temp dirs
-find /tmp -maxdepth 1 \( -name "metro-*" -o -name "haste-map-*" -o -name "eas-build-*" \) 2>/dev/null | xargs rm -rf
-find /tmp -maxdepth 2 -name "eas-build-*" 2>/dev/null | xargs rm -rf
-rm -rf "$HOME/.eas-build" 2>/dev/null || true
-echo "  ✔ All caches cleared"
+
+_removed=0
+_rm_verbose() {
+  local label="$1"; shift
+  local found=0
+  for p in "$@"; do
+    # expand globs manually so we can count
+    for match in $p; do
+      [[ -e "$match" ]] || continue
+      rm -rf "$match"
+      found=1
+      _removed=1
+    done
+  done
+  if [[ $found -eq 1 ]]; then
+    echo "  ✔ cleared: $label"
+  else
+    echo "  ○ already clean: $label"
+  fi
+}
+
+_rm_verbose "Metro/Expo JS cache"       "$HOME/.expo/metro-cache" "$HOME/.expo/cache"
+_rm_verbose "mobile .expo/.metro"       "$WSL_DST/apps/mobile/.expo" "$WSL_DST/apps/mobile/.metro"
+_rm_verbose "node_modules/.cache"       "$WSL_DST/node_modules/.cache"
+_rm_verbose "Gradle build-cache"        "$HOME/.gradle/caches"/build-cache-*
+_rm_verbose "Gradle transforms"         "$HOME/.gradle/caches"/transforms-*
+_rm_verbose "android/app/build output" "$WSL_DST/apps/mobile/android/app/build"
+_rm_verbose "android/.gradle"          "$WSL_DST/apps/mobile/android/.gradle"
+_rm_verbose "/tmp metro/haste/eas dirs" \
+  "$(find /tmp -maxdepth 1 \( -name 'metro-*' -o -name 'haste-map-*' -o -name 'eas-build-*' \) 2>/dev/null | tr '\n' ' ')" \
+  "$(find /tmp -maxdepth 2 -name 'eas-build-*' 2>/dev/null | tr '\n' ' ')"
+_rm_verbose "~/.eas-build"             "$HOME/.eas-build"
+
+if [[ $_removed -eq 1 ]]; then
+  echo "  ✔ All caches cleared"
+else
+  echo "  ⚠ No caches found — everything was already clean (stale bundle risk!)"
+fi
 
 # ─── 6. Stamp build version into eas.json env ────────────────────────────────
 # Using EXPO_PUBLIC_* vars — these are inlined by Metro at bundle time,
@@ -204,6 +227,36 @@ if [[ -z "$APK" ]]; then
   exit 1
 fi
 
+APK_SIZE=$(du -sh "$APK" | cut -f1)
+APK_MTIME=$(stat -c '%y' "$APK" | cut -d'.' -f1)
+echo "▶ APK: $APK ($APK_SIZE, modified $APK_MTIME)"
+
+# ─── 8b. Verify bundle contents ──────────────────────────────────────────────
+echo "▶ Verifying bundle contains expected version..."
+VERIFY_DIR=$(mktemp -d)
+# APKs are ZIP files — extract just the JS bundle
+unzip -q "$APK" "assets/index.android.bundle" -d "$VERIFY_DIR" 2>/dev/null || \
+  unzip -q "$APK" "assets/*.bundle" -d "$VERIFY_DIR" 2>/dev/null || true
+
+BUNDLE=$(find "$VERIFY_DIR" -name "*.bundle" | head -1)
+if [[ -n "$BUNDLE" ]]; then
+  BUNDLE_SIZE=$(du -sh "$BUNDLE" | cut -f1)
+  # Search for the stamped version string inside the (hermes bytecode) bundle.
+  # strings extracts readable text; grep -c counts matches.
+  if strings "$BUNDLE" 2>/dev/null | grep -q "$NEW_VERSION"; then
+    echo "  ✔ Bundle ($BUNDLE_SIZE) contains version $NEW_VERSION — FRESH"
+  else
+    # Also check for any EXPO_PUBLIC_BUILD_VERSION value present
+    FOUND_VER=$(strings "$BUNDLE" 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+' | head -5 | tr '\n' ' ' || true)
+    echo "  ✗ Bundle ($BUNDLE_SIZE) does NOT contain '$NEW_VERSION'"
+    echo "    Versions found in bundle: ${FOUND_VER:-none}"
+    echo "    ⚠ Stale bundle suspected — cache clear may have failed"
+  fi
+else
+  echo "  ⚠ Could not extract bundle from APK for verification (strings check skipped)"
+fi
+rm -rf "$VERIFY_DIR"
+
 # ─── 9. Copy to OneDrive ──────────────────────────────────────────────────────
 DEST="$OUTPUT_DIR/BudgetApp_V$NEW_VERSION.apk"
 echo "▶ Copying to: $DEST"
@@ -215,8 +268,10 @@ echo "$NEW_VERSION" > "$VERSION_FILE"
 # ─── Done ─────────────────────────────────────────────────────────────────────
 ELAPSED=$(( $(date +%s) - BUILD_START ))
 echo ""
-echo "✔ Done in ${ELAPSED}s"
-echo "  APK:         BudgetApp_V$NEW_VERSION.apk"
-echo "  versionCode: $VERSION_CODE"
-echo "  Dir:         $OUTPUT_DIR"
+echo "╔══════════════════════════════════════╗"
+echo "║  Build complete in ${ELAPSED}s"
+echo "║  APK:         BudgetApp_V$NEW_VERSION.apk"
+echo "║  versionCode: $VERSION_CODE"
+echo "║  Dir:         $OUTPUT_DIR"
+echo "╚══════════════════════════════════════╝"
 echo ""
