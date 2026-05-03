@@ -9,11 +9,11 @@ interface Goal {
   name: string;
   icon: string;
   color: string;
-  target_amount: string;
-  current_amount: string;
+  target_amount: number;
+  current_amount: number;
   pct: number;
   deadline: string | null;
-  is_completed: boolean;
+  is_completed: number | boolean;
 }
 
 export function GoalCard({ goal: g, onDeposit, onDelete }: { goal: Goal; onDeposit?: () => void; onDelete?: () => void }) {
@@ -32,8 +32,8 @@ export function GoalCard({ goal: g, onDeposit, onDelete }: { goal: Goal; onDepos
         <View style={s.body}>
           <Text style={[s.name, { color: colors.text }]}>{g.name}</Text>
           <Text style={[s.amounts, { color: colors.textMuted }]}>
-            €{parseFloat(g.current_amount).toFixed(2)}
-            <Text style={{ color: colors.textSubtle }}> / €{parseFloat(g.target_amount).toFixed(2)}</Text>
+            €{g.current_amount.toFixed(2)}
+            <Text style={{ color: colors.textSubtle }}> / €{g.target_amount.toFixed(2)}</Text>
           </Text>
           {daysLeft !== null && (
             <View style={s.deadlineRow}>

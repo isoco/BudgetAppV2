@@ -99,6 +99,8 @@ check "app/settings.tsx"                       "EXPO_PUBLIC_BUILD_VERSION"    "s
 check "app/(tabs)/savings.tsx"                 "pastTotal"                    "savings.tsx — past-only total"
 check "app/(tabs)/budget.tsx"                  "viewMonth"                    "budget.tsx — month navigation"
 check "src/components/BudgetCard.tsx"          "onDeleteExpense"              "BudgetCard.tsx — delete expense prop"
+check "src/components/SpendingChart.tsx"       "import React from"            "SpendingChart.tsx — React imported before use"
+check "app/(tabs)/index.tsx"                   "getTransactions"              "index.tsx — getTransactions imported"
 check "app/daily-tracker.tsx"                  "getDailySpendTotalsByDay"     "daily-tracker.tsx — daily_spends calendar fix"
 check "src/db/queries.ts"                      "savingsTarget"                "queries.ts — savings in projected expense"
 check "src/widget/widgetTaskHandler.ts"        "widgetTaskHandler"            "widgetTaskHandler.ts — widget task handler"

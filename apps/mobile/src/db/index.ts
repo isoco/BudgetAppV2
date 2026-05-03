@@ -123,23 +123,28 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
   const currentVersion = versionRows[0]?.user_version ?? 0;
 
   if (currentVersion < MIGRATIONS.length) {
-    await db.withTransactionAsync(async () => {
-      for (let i = currentVersion; i < MIGRATIONS.length; i++) {
-        try {
-          await db.execAsync(MIGRATIONS[i]);
-        } catch (e: any) {
-          // Safe to ignore: table already exists or column already exists.
-          // Android SQLite: "table X already has a column named Y"
-          // Other SQLite:   "duplicate column name: Y"
-          const msg: string = e?.message ?? '';
-          if (!msg.includes('duplicate column') && !msg.includes('already has a column')) {
-            console.error(`Migration ${i + 1} failed: ${msg}`);
-            throw e;
-          }
+    for (let i = currentVersion; i < MIGRATIONS.length; i++) {
+      try {
+        await db.execAsync(MIGRATIONS[i]);
+      } catch (e: any) {
+        // Safe to ignore: table/index already exists or column already exists.
+        // Android SQLite: "table X already has a column named Y"
+        // Other SQLite:   "duplicate column name: Y"
+        // CREATE IF NOT EXISTS: normally never throws, but guard anyway
+        const msg: string = e?.message ?? '';
+        if (
+          !msg.includes('duplicate column') &&
+          !msg.includes('already has a column') &&
+          !msg.includes('already exists')
+        ) {
+          console.error(`Migration ${i + 1} failed: ${msg}`);
+          throw e;
         }
       }
-      await db.execAsync(`PRAGMA user_version = ${MIGRATIONS.length}`);
-    });
+    }
+    // Set version AFTER all migrations succeed — outside any transaction so
+    // PRAGMA is not subject to transaction rollback behaviour in expo-sqlite.
+    await db.execAsync(`PRAGMA user_version = ${MIGRATIONS.length}`);
   }
 
   await seedCategories(db);

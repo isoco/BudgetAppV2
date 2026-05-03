@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import * as LocalAuthentication from 'expo-local-authentication';
 import {
-  getDashboardData, getSettings,
+  getDashboardData, getSettings, getTransactions,
   getUpcomingBills, getUpcomingIncome, getEndOfMonthProjection,
   autoPopulateRecurring, getSavingsSummary, UpcomingItem,
   getDailySpends, createDailySpend, deleteDailySpend, DailySpend,
