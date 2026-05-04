@@ -95,6 +95,8 @@ check() {
 check "src/store/privacyStore.ts"              "useIncomeHidden"              "privacyStore — global privacy store"
 check "app/(tabs)/index.tsx"                   "privacyInitialized"           "index.tsx — privacy persistence fix"
 check "app/(tabs)/transactions.tsx"            "sortField"                    "transactions.tsx — sort by date/amount"
+check "app/(tabs)/transactions.tsx"            "__leftover__"                 "transactions.tsx — virtual leftover row"
+check "app/(tabs)/transactions.tsx"            "openingBalance"               "transactions.tsx — opening balance state"
 check "app/settings.tsx"                       "EXPO_PUBLIC_BUILD_VERSION"    "settings.tsx — version from env var"
 check "app/(tabs)/savings.tsx"                 "pastTotal"                    "savings.tsx — past-only total"
 check "app/(tabs)/budget.tsx"                  "viewMonth"                    "budget.tsx — month navigation"

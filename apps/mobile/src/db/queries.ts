@@ -799,12 +799,14 @@ export async function getDashboardData(opts?: { month?: number; year?: number })
   const [totals, cats, recent, mbRows, settings, spendTodayRows] = await Promise.all([
     db.getAllAsync<any>(`
       SELECT
-        SUM(CASE WHEN type='income'  AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS income_this,
-        SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS expense_this,
-        SUM(CASE WHEN type='income'  AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS income_last,
-        SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END) AS expense_last
+        COALESCE(SUM(CASE WHEN type='income'  AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END),0) AS income_this,
+        COALESCE(SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END),0) AS expense_this,
+        COALESCE(SUM(CASE WHEN type='income'  AND strftime('%Y-%m',date)=? AND paid_date IS NOT NULL THEN amount ELSE 0 END),0) AS paid_income_this,
+        COALESCE(SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? AND paid_date IS NOT NULL THEN amount ELSE 0 END),0) AS paid_expense_this,
+        COALESCE(SUM(CASE WHEN type='income'  AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END),0) AS income_last,
+        COALESCE(SUM(CASE WHEN type='expense' AND strftime('%Y-%m',date)=? THEN amount ELSE 0 END),0) AS expense_last
       FROM transactions`,
-      [thisMonth, thisMonth, lastMonthStr, lastMonthStr]
+      [thisMonth, thisMonth, thisMonth, thisMonth, lastMonthStr, lastMonthStr]
     ),
     db.getAllAsync<any>(`
       SELECT c.name, c.color, c.icon, SUM(t.amount) AS total
@@ -819,11 +821,13 @@ export async function getDashboardData(opts?: { month?: number; year?: number })
     db.getAllAsync<{ total: number }>("SELECT COALESCE(SUM(amount),0) AS total FROM daily_spends WHERE date = date('now')"),
   ]);
 
-  const t           = totals[0];
-  const incomeThis  = t.income_this   ?? 0;
-  const expenseThis = t.expense_this  ?? 0;
-  const incomeLast  = t.income_last   ?? 0;
-  const expenseLast = t.expense_last  ?? 0;
+  const t              = totals[0];
+  const incomeThis     = t.income_this      ?? 0;
+  const expenseThis    = t.expense_this     ?? 0;
+  const paidIncomeThis = t.paid_income_this ?? 0;
+  const paidExpThis    = t.paid_expense_this ?? 0;
+  const incomeLast     = t.income_last      ?? 0;
+  const expenseLast    = t.expense_last     ?? 0;
   const spentToday  = spendTodayRows[0]?.total ?? 0;
   const daysInMonth = new Date(y, m, 0).getDate();
   const isCurMonth  = y === now.getFullYear() && m === (now.getMonth() + 1);
@@ -834,8 +838,8 @@ export async function getDashboardData(opts?: { month?: number; year?: number })
 
   const savingsTarget  = mbRows[0]?.savings_contribution ?? parseFloat(cfg.monthly_savings as string || '0');
   const dailyLimit     = parseFloat(cfg.daily_limit as string || '0');
-  // Savings is separate — available = what's actually spendable (opening + income - expenses)
-  const available      = openingBalance + incomeThis - expenseThis;
+  // Available = prev month leftover + marked income - marked expense - savings target
+  const available      = openingBalance + paidIncomeThis - paidExpThis - savingsTarget;
 
   // Get previous month name for rollover label
   const prevMonthDate = new Date(y, m - 2, 1);

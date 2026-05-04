@@ -8,7 +8,7 @@ import {
   getTransactions, deleteTransaction, deleteAllRecurringByCategory,
   deleteRecurringFuture, deleteRecurringPast,
   markTransactionPaid, markTransactionUnchecked, cascadeOpeningBalances, Transaction,
-  getBudgets,
+  getBudgets, getMonthBalance,
 } from '../../src/db/queries';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
@@ -33,8 +33,10 @@ export default function TransactionsScreen() {
   const now   = new Date();
   const today = format(now, 'yyyy-MM-dd');
 
-  const [viewMonth, setViewMonth] = useState(now.getMonth() + 1);
-  const [viewYear,  setViewYear]  = useState(now.getFullYear());
+  const [viewMonth, setViewMonth]     = useState(now.getMonth() + 1);
+  const [viewYear,  setViewYear]      = useState(now.getFullYear());
+  const [openingBalance, setOpening]  = useState(0);
+  const [savingsTarget, setSavings]   = useState(0);
 
   const isCurrentMonth = viewMonth === now.getMonth() + 1 && viewYear === now.getFullYear();
 
@@ -58,8 +60,14 @@ export default function TransactionsScreen() {
     const from = format(startOfMonth(monthDate), 'yyyy-MM-dd');
     const to   = format(endOfMonth(monthDate),   'yyyy-MM-dd');
 
-    let data = await getTransactions({ from, to, limit: 500 });
+    const [mb, rawData] = await Promise.all([
+      getMonthBalance(viewMonth, viewYear),
+      getTransactions({ from, to, limit: 500 }),
+    ]);
+    setOpening(mb.opening_balance ?? 0);
+    setSavings(mb.savings_contribution ?? 0);
 
+    let data = rawData;
     // Auto-check past transactions not manually unchecked
     const toCheck = data.filter(tx => tx.date <= today && !tx.paid_date && !tx.manually_unchecked);
     if (toCheck.length > 0) {
@@ -139,11 +147,33 @@ export default function TransactionsScreen() {
     }
   }
 
+  // Previous month label for leftover row
+  const prevMonthDt   = new Date(viewYear, viewMonth - 2, 1);
+  const prevMonthName = prevMonthDt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
   // Summary — always computed from ALL txns (checked only), never affected by filter/search
   const checkedTxs     = allTxns.filter(tx => tx.paid_date);
   const checkedIncome  = checkedTxs.filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0);
   const checkedExpense = checkedTxs.filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
-  const checkedBalance = checkedIncome - checkedExpense;
+  const available      = openingBalance + checkedIncome - checkedExpense - savingsTarget;
+
+  // Virtual leftover row — appears at top when opening balance > 0, in 'all' and 'income' filters
+  const leftoverRow: Transaction | null = openingBalance > 0 && (filter === 'all' || filter === 'income') ? {
+    id: '__leftover__',
+    category_id: null,
+    amount: openingBalance,
+    type: 'income',
+    date: `${viewYear}-${String(viewMonth).padStart(2, '0')}-01`,
+    note: null,
+    merchant: null,
+    is_recurring: 0,
+    created_at: '',
+    paid_date: today,
+    manually_unchecked: 0,
+    category_name: `Leftover from ${prevMonthName}`,
+    category_icon: '💰',
+    category_color: '#4CAF50',
+  } : null;
 
   // Filtered + sorted list — client-side
   const listData = useMemo(() => {
@@ -177,6 +207,9 @@ export default function TransactionsScreen() {
 
     return result;
   }, [allTxns, filter, budgetCatIds, search, sortField, sortDir]);
+
+  // Full list with virtual row prepended (outside useMemo — depends on openingBalance/filter)
+  const displayData = leftoverRow ? [leftoverRow, ...listData] : listData;
 
   function toggleSort(field: SortField) {
     if (sortField === field) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
@@ -218,12 +251,18 @@ export default function TransactionsScreen() {
         </View>
         <View style={[s.summaryDivider, { backgroundColor: colors.border }]} />
         <View style={s.summaryCol}>
-          <Text style={[s.summaryLabel, { color: colors.textMuted }]}>Balance</Text>
-          <Text style={[s.summaryValue, { color: checkedBalance >= 0 ? staticColors.success : staticColors.danger }]}>
-            {hide ? '€ ••••' : `${checkedBalance >= 0 ? '+' : ''}€${checkedBalance.toFixed(2)}`}
+          <Text style={[s.summaryLabel, { color: colors.textMuted }]}>Available</Text>
+          <Text style={[s.summaryValue, { color: available >= 0 ? staticColors.success : staticColors.danger }]}>
+            {hide ? '€ ••••' : `${available >= 0 ? '+' : ''}€${available.toFixed(2)}`}
           </Text>
         </View>
       </View>
+      {savingsTarget > 0 && (
+        <View style={[s.savingsBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[s.summaryLabel, { color: colors.textMuted }]}>Savings deducted</Text>
+          <Text style={[s.summaryValue, { color: staticColors.danger }]}>-€{savingsTarget.toFixed(2)}</Text>
+        </View>
+      )}
 
       {/* Search */}
       <View style={[s.searchRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -278,20 +317,36 @@ export default function TransactionsScreen() {
       </View>
 
       <FlatList
-        data={listData}
+        data={displayData}
         keyExtractor={item => item.id}
         refreshing={loading}
         onRefresh={load}
-        renderItem={({ item }) => (
-          <TransactionItem
-            transaction={item}
-            onPress={() => setSelectedTx(item)}
-            onDelete={() => handleDelete(item)}
-            checked={!!item.paid_date}
-            onToggle={() => handleToggle(item)}
-            hideAmount={hide && item.type === 'income'}
-          />
-        )}
+        renderItem={({ item }) => {
+          if (item.id === '__leftover__') {
+            return (
+              <View style={[s.leftoverRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[s.leftoverIcon]}>💰</Text>
+                <View style={s.leftoverBody}>
+                  <Text style={[s.leftoverTitle, { color: colors.text }]}>{item.category_name}</Text>
+                  <Text style={[s.leftoverDate, { color: colors.textMuted }]}>{item.date}</Text>
+                </View>
+                <Text style={[s.leftoverAmount, { color: staticColors.success }]}>
+                  {hide ? '€ ••••' : `+€${item.amount.toFixed(2)}`}
+                </Text>
+              </View>
+            );
+          }
+          return (
+            <TransactionItem
+              transaction={item}
+              onPress={() => setSelectedTx(item)}
+              onDelete={() => handleDelete(item)}
+              checked={!!item.paid_date}
+              onToggle={() => handleToggle(item)}
+              hideAmount={hide && item.type === 'income'}
+            />
+          );
+        }}
         contentContainerStyle={s.list}
         ListEmptyComponent={
           !loading
@@ -393,6 +448,13 @@ const s = StyleSheet.create({
   sortBtn:        { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full, borderWidth: 1 },
   sortBtnActive:  { backgroundColor: staticColors.primary, borderColor: staticColors.primary },
   sortBtnText:    { ...typography.xs, fontWeight: '600' },
+  savingsBar:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: spacing.md, marginBottom: spacing.sm, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: 6 },
+  leftoverRow:    { flexDirection: 'row', alignItems: 'center', padding: spacing.md, marginBottom: spacing.xs, borderRadius: radius.md, borderWidth: 1, gap: spacing.sm },
+  leftoverIcon:   { fontSize: 22 },
+  leftoverBody:   { flex: 1 },
+  leftoverTitle:  { ...typography.sm, fontWeight: '600' },
+  leftoverDate:   { ...typography.xs },
+  leftoverAmount: { ...typography.base, fontWeight: '700' },
   list:           { padding: spacing.md, paddingBottom: 80 },
   empty:          { ...typography.base, textAlign: 'center', marginTop: spacing.xl },
   modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
