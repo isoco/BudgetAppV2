@@ -115,6 +115,16 @@ const MIGRATIONS: string[] = [
   `ALTER TABLE transactions ADD COLUMN manually_unchecked INTEGER DEFAULT 0`,
   `ALTER TABLE fuel_entries ADD COLUMN transaction_id TEXT`,
   `ALTER TABLE daily_spends ADD COLUMN transaction_id TEXT`,
+  // v3 — recurring skip table (prevents autoPopulateRecurring from re-inserting manually deleted occurrences)
+  `CREATE TABLE IF NOT EXISTS recurring_skips (
+    category_id TEXT NOT NULL,
+    month       INTEGER NOT NULL,
+    year        INTEGER NOT NULL,
+    PRIMARY KEY (category_id, month, year)
+  )`,
+  // v4 — track when a recurring category was activated so autoPopulateRecurring doesn't fill past months
+  `ALTER TABLE categories ADD COLUMN recurring_start_month INTEGER`,
+  `ALTER TABLE categories ADD COLUMN recurring_start_year  INTEGER`,
   // ↑ Add new migrations above this line. Never remove or reorder existing ones.
 ];
 

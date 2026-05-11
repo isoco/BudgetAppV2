@@ -8,7 +8,7 @@ import {
   getTransactions, deleteTransaction, deleteAllRecurringByCategory,
   deleteRecurringFuture, deleteRecurringPast,
   markTransactionPaid, markTransactionUnchecked, cascadeOpeningBalances, Transaction,
-  getBudgets, getMonthBalance,
+  getBudgets, getMonthBalance, skipRecurringOccurrence,
 } from '../../src/db/queries';
 import { useTheme } from '../../src/theme/useTheme';
 import { colors as staticColors, spacing, radius, typography } from '../../src/theme';
@@ -107,6 +107,7 @@ export default function TransactionsScreen() {
       Alert.alert('Delete Recurring Transaction', 'Which occurrences to delete?', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'This Only', onPress: async () => {
+          if (tx.category_id) await skipRecurringOccurrence(tx.category_id, m, y);
           await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
           setAllTxns(prev => prev.filter(t => t.id !== tx.id));

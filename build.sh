@@ -105,6 +105,8 @@ check "src/components/SpendingChart.tsx"       "import React from"            "S
 check "app/(tabs)/index.tsx"                   "getTransactions"              "index.tsx — getTransactions imported"
 check "app/daily-tracker.tsx"                  "getDailySpendTotalsByDay"     "daily-tracker.tsx — daily_spends calendar fix"
 check "src/db/queries.ts"                      "savingsTarget"                "queries.ts — savings in projected expense"
+check "src/db/queries.ts"                      "recurring_skips"              "queries.ts — recurring skip table"
+check "src/db/queries.ts"                      "createRecurringNMonths"       "queries.ts — finite recurring creation"
 check "src/widget/widgetTaskHandler.ts"        "widgetTaskHandler"            "widgetTaskHandler.ts — widget task handler"
 check "src/widget/DailyLogWidget.tsx"          "DailyLogWidget"               "DailyLogWidget.tsx — widget UI component"
 check "app/_layout.tsx"                        "widgetTaskHandler"            "_layout.tsx — widget registered"

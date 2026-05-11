@@ -18,6 +18,7 @@ export interface Category {
   type: 'income' | 'expense' | 'both';
   is_system: number; is_active: number;
   is_recurring: number; default_amount: number; due_day: number | null;
+  recurring_start_month: number | null; recurring_start_year: number | null;
 }
 
 export interface Transaction {
@@ -90,7 +91,7 @@ export async function createCategory(data: Omit<Category, 'id' | 'is_system' | '
   return { id, ...data, is_system: 0, is_active: 1 };
 }
 
-export async function updateCategory(id: string, data: Partial<Pick<Category, 'name' | 'icon' | 'color' | 'type' | 'is_recurring' | 'default_amount' | 'due_day'>>): Promise<void> {
+export async function updateCategory(id: string, data: Partial<Pick<Category, 'name' | 'icon' | 'color' | 'type' | 'is_recurring' | 'default_amount' | 'due_day' | 'recurring_start_month' | 'recurring_start_year'>>): Promise<void> {
   const db = await getDb();
   const keys = Object.keys(data) as (keyof typeof data)[];
   if (!keys.length) return;
@@ -556,16 +557,34 @@ export async function getEndOfMonthProjection(): Promise<{
 
 // ─── Auto-Populate Recurring ──────────────────────────────────────────────────
 
+export async function skipRecurringOccurrence(categoryId: string, month: number, year: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT OR IGNORE INTO recurring_skips (category_id, month, year) VALUES (?,?,?)',
+    [categoryId, month, year]
+  );
+}
+
 export async function autoPopulateRecurring(year: number, month: number): Promise<void> {
   const db = await getDb();
   const monthStr = `${year}-${String(month).padStart(2,'0')}`;
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  // Pass 1: categories explicitly configured as recurring
+  // Pass 1: categories explicitly configured as recurring — skip if manually deleted this occurrence
   const cats = await db.getAllAsync<Category>(
     `SELECT * FROM categories WHERE is_recurring = 1 AND is_active = 1 AND default_amount > 0`
   );
   for (const cat of cats) {
+    // Don't populate months before the recurring start date
+    if (cat.recurring_start_month != null && cat.recurring_start_year != null) {
+      const startYM = cat.recurring_start_year * 100 + cat.recurring_start_month;
+      if (year * 100 + month < startYM) continue;
+    }
+    const skipped = await db.getAllAsync<{count:number}>(
+      'SELECT COUNT(*) as count FROM recurring_skips WHERE category_id=? AND month=? AND year=?',
+      [cat.id, month, year]
+    );
+    if (skipped[0].count > 0) continue;
     const txType = cat.type === 'income' ? 'income' : 'expense';
     const existing = await db.getAllAsync<{count:number}>(
       `SELECT COUNT(*) as count FROM transactions WHERE category_id=? AND strftime('%Y-%m',date)=? AND type=? AND is_recurring=1`,
@@ -580,9 +599,8 @@ export async function autoPopulateRecurring(year: number, month: number): Promis
     );
   }
 
-  // Pass 2: propagate recurring transactions that exist in any prior month
-  // but whose category wasn't configured via the recurring toggle
-  // (handles manually-created or imported recurring transactions)
+  // Pass 2: propagate recurring transactions from prior months — ONLY for categories
+  // still marked is_recurring=1 (prevents finite/manual recurring from being extended indefinitely)
   const templates = await db.getAllAsync<{
     category_id: string; amount: number; type: string; day: number;
   }>(`
@@ -591,14 +609,21 @@ export async function autoPopulateRecurring(year: number, month: number): Promis
            t.type,
            CAST(strftime('%d', MAX(t.date)) AS INTEGER) AS day
     FROM transactions t
+    JOIN categories c ON c.id = t.category_id
     WHERE t.is_recurring = 1
       AND t.type != 'transfer'
       AND t.category_id IS NOT NULL
       AND strftime('%Y-%m', t.date) < ?
+      AND c.is_recurring = 1
     GROUP BY t.category_id, t.type
   `, [monthStr]);
 
   for (const tpl of templates) {
+    const skipped = await db.getAllAsync<{count:number}>(
+      'SELECT COUNT(*) as count FROM recurring_skips WHERE category_id=? AND month=? AND year=?',
+      [tpl.category_id, month, year]
+    );
+    if (skipped[0].count > 0) continue;
     const existing = await db.getAllAsync<{count:number}>(
       `SELECT COUNT(*) as count FROM transactions WHERE category_id=? AND strftime('%Y-%m',date)=? AND type=? AND is_recurring=1`,
       [tpl.category_id, monthStr, tpl.type]
@@ -611,6 +636,37 @@ export async function autoPopulateRecurring(year: number, month: number): Promis
       [uuid(), tpl.amount, tpl.type, date, tpl.category_id]
     );
   }
+}
+
+/**
+ * Creates N recurring transaction records directly (for finite recurring).
+ * Does NOT set category.is_recurring — autoPopulateRecurring won't extend beyond N months.
+ */
+export async function createRecurringNMonths(
+  categoryId: string, amount: number, type: 'income' | 'expense',
+  day: number, startMonth: number, startYear: number, numMonths: number
+): Promise<void> {
+  const db = await getDb();
+  for (let i = 0; i < numMonths; i++) {
+    const d    = new Date(startYear, startMonth - 1 + i, 1);
+    const y    = d.getFullYear();
+    const m    = d.getMonth() + 1;
+    const dim  = new Date(y, m, 0).getDate();
+    const safeDay = Math.min(day, dim);
+    const date = `${y}-${String(m).padStart(2,'0')}-${String(safeDay).padStart(2,'0')}`;
+    // Skip if already exists for this category+month
+    const ex = await db.getAllAsync<{count:number}>(
+      `SELECT COUNT(*) as count FROM transactions WHERE category_id=? AND strftime('%Y-%m',date)=? AND is_recurring=1`,
+      [categoryId, `${y}-${String(m).padStart(2,'0')}`]
+    );
+    if (ex[0].count > 0) continue;
+    await db.runAsync(
+      'INSERT INTO transactions (id, amount, type, date, category_id, is_recurring) VALUES (?,?,?,?,?,1)',
+      [uuid(), amount, type, date, categoryId]
+    );
+  }
+  // Cascade balances from start month
+  await cascadeOpeningBalances(startMonth, startYear);
 }
 
 /**

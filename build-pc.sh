@@ -105,6 +105,8 @@ check "app/(tabs)/transactions.tsx"            "sortField"                    "t
 check "app/(tabs)/transactions.tsx"            "__leftover__"                 "transactions.tsx — virtual leftover row"
 check "app/(tabs)/transactions.tsx"            "openingBalance"               "transactions.tsx — opening balance state"
 check "src/db/queries.ts"                      "savingsTarget"                "queries.ts — savings in projected expense"
+check "src/db/queries.ts"                      "recurring_skips"              "queries.ts — recurring skip table"
+check "src/db/queries.ts"                      "createRecurringNMonths"       "queries.ts — finite recurring creation"
 check "app/(tabs)/savings.tsx"                 "pastTotal"                    "savings.tsx — past-only total"
 check "app/(tabs)/budget.tsx"                  "viewMonth"                    "budget.tsx — month navigation"
 check "src/components/BudgetCard.tsx"          "onDeleteExpense"              "BudgetCard.tsx — delete expense prop"

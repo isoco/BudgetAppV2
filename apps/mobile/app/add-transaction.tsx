@@ -7,6 +7,7 @@ import {
   getCategories, createTransaction, updateTransaction, updateTransactionAndFuture,
   updateCategory, refreshRecurringAllFutureMonths, cascadeOpeningBalances,
   autoPopulateRecurring, getTransactionById, markTransactionPaid, Transaction,
+  createRecurringNMonths,
 } from '../src/db/queries';
 import { useQuery } from '../src/hooks/useQuery';
 import { useTheme } from '../src/theme/useTheme';
@@ -28,8 +29,10 @@ export default function AddTransactionScreen() {
   const [catId, setCatId]       = useState<string | null>(null);
   const [txDate, setTxDate]     = useState(defaultDate ?? format(new Date(), 'yyyy-MM-dd'));
   const [saving, setSaving]     = useState(false);
-  const [recurring, setRecurring] = useState(false);
+  const [recurring, setRecurring]       = useState(false);
   const [recurringDay, setRecurringDay] = useState('');
+  const [recurringMonths, setRecurringMonths] = useState(''); // '' = indefinitely, number = N months
+  const [startCurrentMonth, setStartCurrent] = useState(true);
   const [paid, setPaid] = useState(false);
 
   // Load existing transaction for edit mode
@@ -57,14 +60,28 @@ export default function AddTransactionScreen() {
       if (!recurringDay || isNaN(day) || day < 1 || day > 31) {
         return Alert.alert('Enter a valid day of month (1–31)');
       }
-      await updateCategory(catId, { is_recurring: 1, default_amount: num, due_day: day });
-      await refreshRecurringAllFutureMonths();
       const now = new Date();
-      const y = now.getFullYear(), m = now.getMonth() + 1;
-      const prev1 = new Date(y, m - 2, 1);
-      const prev2 = new Date(y, m - 3, 1);
-      await autoPopulateRecurring(prev1.getFullYear(), prev1.getMonth() + 1);
-      await autoPopulateRecurring(prev2.getFullYear(), prev2.getMonth() + 1);
+      const curM = now.getMonth() + 1;
+      const curY = now.getFullYear();
+      const startM = startCurrentMonth ? curM : (curM === 12 ? 1 : curM + 1);
+      const startY = startCurrentMonth ? curY : (curM === 12 ? curY + 1 : curY);
+      const nMonths = parseInt(recurringMonths);
+      const txType = type === 'transfer' ? 'expense' : type;
+
+      if (recurringMonths && !isNaN(nMonths) && nMonths > 0) {
+        // Finite: create exactly N transaction records, don't mark category as recurring
+        await createRecurringNMonths(catId, num, txType as 'income' | 'expense', day, startM, startY, nMonths);
+      } else {
+        // Indefinite: mark category + set start date so past months are never populated
+        await updateCategory(catId, {
+          is_recurring: 1, default_amount: num, due_day: day,
+          recurring_start_month: startM, recurring_start_year: startY,
+        });
+        await refreshRecurringAllFutureMonths();
+        if (startCurrentMonth) {
+          await autoPopulateRecurring(curY, curM);
+        }
+      }
     } else {
       await createTransaction({
         amount: num, type, date: txDate,
@@ -201,27 +218,53 @@ export default function AddTransactionScreen() {
               </View>
               <Switch
                 value={recurring}
-                onValueChange={v => { setRecurring(v); if (!v) setRecurringDay(''); }}
+                onValueChange={v => { setRecurring(v); if (!v) { setRecurringDay(''); setRecurringMonths(''); } }}
                 trackColor={{ true: colors.primary }}
                 thumbColor="#fff"
               />
             </View>
             {recurring && (
-              <View style={s.recurringDayRow}>
-                <Text style={s.recurringDayLabel}>Day of month:</Text>
-                <TextInput
-                  style={s.recurringDayInput}
-                  value={recurringDay}
-                  onChangeText={setRecurringDay}
-                  placeholder="1–31"
-                  placeholderTextColor={colors.textSubtle}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                />
-                {!catId && (
-                  <Text style={s.recurringNote}>⚠ Select a category to enable</Text>
-                )}
-              </View>
+              <>
+                <View style={s.recurringDayRow}>
+                  <Text style={s.recurringDayLabel}>Day of month:</Text>
+                  <TextInput
+                    style={s.recurringDayInput}
+                    value={recurringDay}
+                    onChangeText={setRecurringDay}
+                    placeholder="1–31"
+                    placeholderTextColor={colors.textSubtle}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                  />
+                  {!catId && (
+                    <Text style={s.recurringNote}>⚠ Select a category to enable</Text>
+                  )}
+                </View>
+                <View style={s.recurringDayRow}>
+                  <Text style={s.recurringDayLabel}>Repeat for:</Text>
+                  <TextInput
+                    style={s.recurringDayInput}
+                    value={recurringMonths}
+                    onChangeText={setRecurringMonths}
+                    placeholder="∞"
+                    placeholderTextColor={colors.textSubtle}
+                    keyboardType="number-pad"
+                    maxLength={3}
+                  />
+                  <Text style={[s.recurringDayLabel, { flex: 1 }]}>
+                    {recurringMonths ? `month${parseInt(recurringMonths) !== 1 ? 's' : ''}` : 'months (leave blank = forever)'}
+                  </Text>
+                </View>
+                <View style={s.recurringDayRow}>
+                  <Text style={[s.recurringDayLabel, { flex: 1 }]}>Start this month:</Text>
+                  <Switch
+                    value={startCurrentMonth}
+                    onValueChange={setStartCurrent}
+                    trackColor={{ true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              </>
             )}
           </View>
         )}
