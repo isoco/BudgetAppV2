@@ -103,47 +103,56 @@ export default function TransactionsScreen() {
 
   async function handleDelete(tx: Transaction) {
     const [y, m] = tx.date.split('-').map(Number);
+
+    async function doDelete(action: () => Promise<void>) {
+      try {
+        await action();
+      } catch (e: any) {
+        Alert.alert('Error', e?.message ?? 'Could not delete transaction');
+      }
+    }
+
     if (tx.is_recurring) {
       Alert.alert('Delete Recurring Transaction', 'Which occurrences to delete?', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'This Only', onPress: async () => {
+        { text: 'This Only', onPress: () => doDelete(async () => {
           if (tx.category_id) await skipRecurringOccurrence(tx.category_id, m, y);
           await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
           setAllTxns(prev => prev.filter(t => t.id !== tx.id));
           setSelectedTx(null);
-        }},
-        { text: 'This & Future', onPress: async () => {
+        })},
+        { text: 'This & Future', onPress: () => doDelete(async () => {
           if (tx.category_id) await deleteRecurringFuture(tx.category_id, tx.date);
           else await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
           setSelectedTx(null);
           load();
-        }},
-        { text: 'This & Past', onPress: async () => {
+        })},
+        { text: 'This & Past', onPress: () => doDelete(async () => {
           if (tx.category_id) await deleteRecurringPast(tx.category_id, tx.date);
           else await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
           setSelectedTx(null);
           load();
-        }},
-        { text: 'All', style: 'destructive', onPress: async () => {
+        })},
+        { text: 'All', style: 'destructive', onPress: () => doDelete(async () => {
           if (tx.category_id) await deleteAllRecurringByCategory(tx.category_id);
           else await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
           setSelectedTx(null);
           load();
-        }},
+        })},
       ]);
     } else {
       Alert.alert('Delete', 'This cannot be undone.', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: async () => {
+        { text: 'Delete', style: 'destructive', onPress: () => doDelete(async () => {
           await deleteTransaction(tx.id);
           await cascadeOpeningBalances(m, y);
           setAllTxns(prev => prev.filter(t => t.id !== tx.id));
           setSelectedTx(null);
-        }},
+        })},
       ]);
     }
   }

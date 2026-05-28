@@ -97,6 +97,8 @@ check "app/(tabs)/index.tsx"                   "privacyInitialized"           "i
 check "app/(tabs)/transactions.tsx"            "sortField"                    "transactions.tsx — sort by date/amount"
 check "app/(tabs)/transactions.tsx"            "__leftover__"                 "transactions.tsx — virtual leftover row"
 check "app/(tabs)/transactions.tsx"            "openingBalance"               "transactions.tsx — opening balance state"
+check "app/(tabs)/transactions.tsx"            "doDelete"                     "transactions.tsx — delete error handling"
+check "app/(tabs)/index.tsx"                   "Only populate current month"  "index.tsx — no past-month autoPopulate"
 check "app/settings.tsx"                       "EXPO_PUBLIC_BUILD_VERSION"    "settings.tsx — version from env var"
 check "app/(tabs)/savings.tsx"                 "pastTotal"                    "savings.tsx — past-only total"
 check "app/(tabs)/budget.tsx"                  "viewMonth"                    "budget.tsx — month navigation"

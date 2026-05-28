@@ -150,13 +150,8 @@ export default function DashboardScreen() {
   useFocusEffect(useCallback(() => {
     const y = now.getFullYear();
     const m = now.getMonth() + 1;
+    // Only populate current month — populating past months causes deleted transactions to reappear
     autoPopulateRecurring(y, m).then(() => {
-      const prev1 = new Date(y, m - 2, 1);
-      return autoPopulateRecurring(prev1.getFullYear(), prev1.getMonth() + 1);
-    }).then(() => {
-      const prev2 = new Date(y, m - 3, 1);
-      return autoPopulateRecurring(prev2.getFullYear(), prev2.getMonth() + 1);
-    }).then(() => {
       refetch();
       refetchProj();
       refetchBills();

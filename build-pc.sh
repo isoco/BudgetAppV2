@@ -104,6 +104,8 @@ check "app/(tabs)/index.tsx"                   "privacyInitialized"           "i
 check "app/(tabs)/transactions.tsx"            "sortField"                    "transactions.tsx — sort by date/amount"
 check "app/(tabs)/transactions.tsx"            "__leftover__"                 "transactions.tsx — virtual leftover row"
 check "app/(tabs)/transactions.tsx"            "openingBalance"               "transactions.tsx — opening balance state"
+check "app/(tabs)/transactions.tsx"            "doDelete"                     "transactions.tsx — delete error handling"
+check "app/(tabs)/index.tsx"                   "Only populate current month"  "index.tsx — no past-month autoPopulate"
 check "src/db/queries.ts"                      "savingsTarget"                "queries.ts — savings in projected expense"
 check "src/db/queries.ts"                      "recurring_skips"              "queries.ts — recurring skip table"
 check "src/db/queries.ts"                      "createRecurringNMonths"       "queries.ts — finite recurring creation"
